@@ -1,0 +1,942 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Pleite-Uhr</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: eine dunkle Anzeigetafel (die "Uhr") als festes Objekt oben, darunter
+   Analyse-Abschnitte auf ruhigem Papiergrund; Filter in einer Zeile über allem. */
+:root {
+  --bg: #eceef0;
+  --surface: #ffffff;
+  --ink: #13171c;
+  --ink-2: #48505b;
+  --muted: #717a86;
+  --line: #d4d9df;
+  --line-soft: #e6e9ed;
+  --accent: #a86400;          /* Signal-Bernstein für Text auf hellem Grund */
+  --mark-now: #c27800;        /* Reihe: aktuelles Jahr */
+  --mark-ref: #2a78d6;        /* Reihe: Vorjahr / Vergleich */
+  --mark-ctx: #b9c0c8;        /* Kontext-Linien frühere Jahre */
+  --good: #187a43;
+  --bad: #b8322a;
+  --board-bg: #161b21;        /* Anzeigetafel bleibt in beiden Themen dunkel */
+  --board-panel: #1d232b;
+  --board-ink: #f1f3f5;
+  --board-ink-2: #a9b2bd;
+  --board-line: #2c343e;
+  --board-accent: #f2a428;
+  --board-good: #4cc07e;
+  --board-bad: #ff7a6e;
+  --f-display: "Barlow Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --f-num: "IBM Plex Sans Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --f-body: "IBM Plex Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --radius: 6px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1216; --surface: #161b21; --ink: #eef1f4; --ink-2: #b3bbc5; --muted: #848e9a;
+    --line: #2a3139; --line-soft: #20262d; --accent: #f2a428;
+    --mark-now: #c98500; --mark-ref: #3987e5; --mark-ctx: #3d4651;
+    --good: #4cc07e; --bad: #ff7a6e;
+    --board-bg: #0a0d10; --board-panel: #12171c; --board-line: #262d36;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1216; --surface: #161b21; --ink: #eef1f4; --ink-2: #b3bbc5; --muted: #848e9a;
+  --line: #2a3139; --line-soft: #20262d; --accent: #f2a428;
+  --mark-now: #c98500; --mark-ref: #3987e5; --mark-ctx: #3d4651;
+  --good: #4cc07e; --bad: #ff7a6e;
+  --board-bg: #0a0d10; --board-panel: #12171c; --board-line: #262d36;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 15px/1.5 var(--f-body);
+}
+.wrap { max-width: 1120px; margin: 0 auto; padding-inline: 16px; padding-block: 20px 48px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 28px; }
+h1, h2, h3 { font-family: var(--f-display); font-weight: 600; text-wrap: balance; margin: 0; letter-spacing: .01em; }
+h2 { font-size: 1.75rem; line-height: 1.1; }
+h3 { font-size: 1.2rem; }
+p { margin: 0; }
+a { color: inherit; text-underline-offset: 2px; }
+.num { font-family: var(--f-num); font-variant-numeric: tabular-nums; }
+.eyebrow { font: 600 .72rem/1.2 var(--f-body); text-transform: uppercase; letter-spacing: .09em; color: var(--muted); }
+.lede { color: var(--ink-2); max-width: 68ch; }
+
+/* ---------- Kopf & Filterzeile ---------- */
+.top { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 12px 24px; }
+.brand h1 { font-size: clamp(2.2rem, 6vw, 3.1rem); line-height: .95; font-weight: 700; }
+.brand p { color: var(--ink-2); margin-top: 6px; }
+.filters { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: end; }
+.field { display: grid; gap: 4px; min-width: 0; max-width: 100%; }
+.field label { font: 600 .7rem/1 var(--f-body); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+select, .seg button {
+  font: 500 .92rem/1.2 var(--f-body); color: var(--ink); background: var(--surface);
+  border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 10px; min-height: 38px;
+}
+select { padding-right: 28px; max-width: 100%; min-width: 0; }
+select:focus-visible, button:focus-visible, .rank-row:focus-visible { outline: 2px solid var(--mark-ref); outline-offset: 2px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; background: var(--surface); }
+.seg button { border: 0; border-radius: 0; cursor: pointer; color: var(--ink-2); background: transparent; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+
+/* ---------- Anzeigetafel ---------- */
+.board {
+  background: var(--board-bg); color: var(--board-ink); border-radius: 10px;
+  padding: clamp(16px, 3vw, 28px); display: grid; gap: 22px;
+  box-shadow: 0 1px 0 rgba(255,255,255,.04) inset, 0 18px 40px -24px rgba(0,0,0,.55);
+}
+.board-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; align-items: baseline; }
+.board-head .title { font: 700 1.5rem/1 var(--f-display); letter-spacing: .02em; }
+.board-head .where { color: var(--board-ink-2); font-size: .9rem; }
+.live { display: inline-flex; align-items: center; gap: 7px; font: 600 .72rem/1 var(--f-body); letter-spacing: .1em; text-transform: uppercase; color: var(--board-accent); }
+.live i { width: 8px; height: 8px; border-radius: 50%; background: var(--board-accent); animation: pulse 1.6s ease-in-out infinite; }
+.live.off { color: var(--board-ink-2); }
+.live.off i { background: var(--board-ink-2); animation: none; }
+@keyframes pulse { 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .live i { animation: none; } }
+
+.debt .label { font: 600 1.05rem/1.2 var(--f-display); letter-spacing: .03em; color: var(--board-ink-2); }
+.debt .big { font: 700 clamp(2.3rem, 8.4vw, 4.6rem)/1 var(--f-num); font-variant-numeric: tabular-nums; letter-spacing: -.01em; margin-top: 6px; overflow-wrap: anywhere; }
+.debt .big small { font-size: .42em; font-weight: 600; color: var(--board-ink-2); margin-left: .25em; letter-spacing: 0; }
+.debt .sub { margin-top: 8px; color: var(--board-ink-2); font-size: .9rem; display: flex; flex-wrap: wrap; gap: 4px 18px; }
+.debt .sub b { color: var(--board-accent); font-weight: 600; }
+
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); gap: 1px; background: var(--board-line); border-top: 1px solid var(--board-line); border-bottom: 1px solid var(--board-line); }
+.tile { background: var(--board-bg); padding: 16px 16px 16px 0; display: grid; gap: 4px; align-content: start; min-width: 0; }
+.tiles .tile + .tile { padding-left: 16px; }
+.tile .label { font: 600 1.02rem/1.2 var(--f-display); letter-spacing: .03em; color: var(--board-ink-2); }
+.tile .val { font: 700 clamp(1.9rem, 4.6vw, 2.5rem)/1.05 var(--f-num); font-variant-numeric: tabular-nums; }
+.tile .rate { font-size: .84rem; color: var(--board-accent); }
+.tile .split { font-size: .8rem; color: var(--board-ink-2); }
+.tile .delta { font-size: .8rem; }
+.tile .delta.good { color: var(--board-good); }
+.tile .delta.bad { color: var(--board-bad); }
+.tile svg { display: block; margin-top: 4px; }
+
+.board-foot { display: flex; flex-wrap: wrap; gap: 10px 20px; justify-content: space-between; align-items: center; font-size: .78rem; color: var(--board-ink-2); }
+.board-foot .seg { background: var(--board-panel); border-color: var(--board-line); }
+.board-foot .seg button { color: var(--board-ink-2); font-size: .8rem; min-height: 32px; padding: 6px 10px; }
+.board-foot .seg button + button { border-color: var(--board-line); }
+.board-foot .seg button[aria-pressed="true"] { background: var(--board-ink); color: var(--board-bg); }
+
+/* ---------- Abschnitte ---------- */
+section.block { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+.block-head { display: grid; gap: 6px; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: clamp(14px, 2.4vw, 22px); display: grid; gap: 14px; min-width: 0; }
+.panel-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 6px 16px; }
+.panel-head p { color: var(--muted); font-size: .85rem; }
+.grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr)); gap: 16px; }
+.chart { width: 100%; min-height: 200px; position: relative; }
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.chart text { fill: var(--muted); font: 500 11px var(--f-body); font-variant-numeric: tabular-nums; }
+.chart .lbl-strong { fill: var(--ink); font: 600 12px var(--f-num); }
+.chart .lbl-good { fill: var(--good); font: 600 11px var(--f-num); }
+.chart .lbl-bad { fill: var(--bad); font: 600 11px var(--f-num); }
+.chart .lbl-yr { fill: var(--ink-2); font: 600 11.5px var(--f-num); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: .8rem; color: var(--ink-2); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { display: inline-block; width: 16px; height: 0; border-top: 2.5px solid currentColor; }
+.legend i.box { width: 11px; height: 11px; border: 0; border-radius: 2px; }
+.note { font-size: .8rem; color: var(--muted); }
+.kpis { display: flex; flex-wrap: wrap; gap: 8px 28px; }
+.kpi { display: grid; gap: 2px; }
+.kpi b { font: 700 1.6rem/1.1 var(--f-num); font-variant-numeric: tabular-nums; }
+.kpi span { font-size: .78rem; color: var(--muted); }
+.chip { display: inline-block; font: 600 .78rem/1 var(--f-num); padding: 4px 7px; border-radius: 4px; border: 1px solid currentColor; }
+.chip.good { color: var(--good); }
+.chip.bad { color: var(--bad); }
+.chip.flat { color: var(--muted); }
+
+details.table-view summary { cursor: pointer; font-size: .85rem; color: var(--ink-2); }
+.tbl-wrap { overflow-x: auto; margin-top: 10px; }
+table { border-collapse: collapse; width: 100%; font-size: .85rem; }
+th, td { text-align: right; padding: 6px 10px; border-bottom: 1px solid var(--line-soft); white-space: nowrap; font-variant-numeric: tabular-nums; }
+th:first-child, td:first-child { text-align: left; }
+th { font-weight: 600; color: var(--muted); font-size: .75rem; text-transform: uppercase; letter-spacing: .05em; }
+
+/* Länder-Ranking */
+.rank { display: grid; gap: 2px; }
+.rank-row {
+  display: grid; grid-template-columns: minmax(110px, 190px) 1fr 72px 66px; align-items: center; gap: 10px;
+  padding: 5px 6px; border-radius: 4px; cursor: pointer; background: none; border: 0; color: inherit; font: inherit; text-align: left; width: 100%;
+}
+.rank-row:hover { background: var(--line-soft); }
+.rank-row.sel { background: var(--line-soft); box-shadow: inset 3px 0 0 var(--mark-now); }
+.rank-row .nm { font-size: .88rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rank-row .bar { height: 12px; background: var(--line-soft); border-radius: 0 3px 3px 0; position: relative; }
+.rank-row .bar i { position: absolute; inset: 0 auto 0 0; background: var(--mark-ref); border-radius: 0 3px 3px 0; }
+.rank-row.sel .bar i { background: var(--mark-now); }
+.rank-row .v { font: 600 .9rem var(--f-num); text-align: right; font-variant-numeric: tabular-nums; }
+.rank-row .d { font: 600 .78rem var(--f-num); text-align: right; font-variant-numeric: tabular-nums; }
+.rank-row .d.good { color: var(--good); } .rank-row .d.bad { color: var(--bad); }
+@media (max-width: 520px) {
+  .rank-row { grid-template-columns: 1fr 64px 56px; }
+  .rank-row .bar { grid-column: 1 / -1; grid-row: 2; height: 6px; }
+}
+
+.method { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 16px 28px; font-size: .88rem; color: var(--ink-2); }
+.method h3 { color: var(--ink); margin-bottom: 4px; }
+.method ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+
+#tip {
+  position: fixed; z-index: 10; pointer-events: none; background: var(--surface); color: var(--ink);
+  border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font-size: .8rem; min-width: 140px;
+  box-shadow: 0 8px 24px -10px rgba(0,0,0,.35);
+}
+#tip .t { font-weight: 600; margin-bottom: 4px; color: var(--ink-2); }
+#tip .r { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
+#tip .r span { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
+#tip .r span i { width: 12px; border-top: 2.5px solid currentColor; }
+#tip .r b { font: 600 .85rem var(--f-num); font-variant-numeric: tabular-nums; color: var(--ink); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div class="brand">
+      <h1>Pleite-Uhr</h1>
+      <p>Schulden, Firmenpleiten, Gründungen und Arbeitslose – amtliche Daten, live hochgerechnet.</p>
+    </div>
+    <div class="filters" role="group" aria-label="Filter">
+      <div class="field">
+        <label for="region">Region</label>
+        <select id="region"></select>
+      </div>
+    </div>
+  </header>
+
+  <!-- Anzeigetafel -->
+  <section class="board" aria-label="Live-Hochrechnung">
+    <div class="board-head">
+      <div>
+        <div class="title">Stand jetzt</div>
+        <div class="where" id="b-where">Deutschland</div>
+      </div>
+      <span class="live" id="b-live"><i></i><span id="b-live-t">Live hochgerechnet</span></span>
+    </div>
+
+    <div class="debt">
+      <div class="label" id="debt-label">Staatsschulden in Euro</div>
+      <div class="big" id="debt-val">–</div>
+      <div class="sub" id="debt-sub"></div>
+    </div>
+
+    <div class="tiles">
+      <div class="tile" id="t-ins"></div>
+      <div class="tile" id="t-gru"></div>
+      <div class="tile" id="t-auf"></div>
+      <div class="tile" id="t-alo"></div>
+    </div>
+
+    <div class="board-foot">
+      <span id="b-stand"></span>
+      <div class="seg" role="group" aria-label="Anzeige">
+        <button type="button" id="m-live" aria-pressed="true">Hochrechnung</button>
+        <button type="button" id="m-off" aria-pressed="false">Nur amtliche Werte</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Zeitvergleich -->
+  <section class="block" aria-labelledby="h-cmp">
+    <div class="block-head">
+      <div class="eyebrow">Jahresvergleich</div>
+      <h2 id="h-cmp">Derselbe Zeitraum, Jahr für Jahr</h2>
+      <p class="lede">Wähle Kennzahl und Zeitraum – etwa September – und sieh, wie sich der Wert über die Jahre entwickelt hat. Der Regionsfilter oben gilt für alle Grafiken.</p>
+    </div>
+    <div class="filters" role="group" aria-label="Vergleichsfilter">
+      <div class="field"><label for="metric">Kennzahl</label><select id="metric"></select></div>
+      <div class="field"><label for="period">Zeitraum</label><select id="period"></select></div>
+      <div class="field"><label for="span">Jahre</label>
+        <select id="span"><option value="5">letzte 5</option><option value="10" selected>letzte 10</option><option value="99">alle ab 2014</option></select>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h3 id="cmp-title"></h3>
+        <p id="cmp-sub"></p>
+      </div>
+      <div class="kpis" id="cmp-kpis"></div>
+      <div class="chart" id="ch-years" role="img"></div>
+      <details class="table-view">
+        <summary>Als Tabelle anzeigen</summary>
+        <div class="tbl-wrap" id="cmp-table"></div>
+      </details>
+    </div>
+
+    <div class="grid-2">
+      <div class="panel">
+        <div class="panel-head"><h3>Verlaufskurven im Jahr</h3><p id="season-sub"></p></div>
+        <div class="legend" id="season-legend"></div>
+        <div class="chart" id="ch-season" role="img"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h3>Langfristiger Trend</h3><p>Monatswerte und gleitender 12-Monats-Durchschnitt</p></div>
+        <div class="legend" id="trend-legend"></div>
+        <div class="chart" id="ch-trend" role="img"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Bundesländer -->
+  <section class="block" aria-labelledby="h-laender">
+    <div class="block-head">
+      <div class="eyebrow">Regionalvergleich</div>
+      <h2 id="h-laender">Bundesländer im Vergleich</h2>
+      <p class="lede" id="rank-lede"></p>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><h3 id="rank-title"></h3><p id="rank-sub"></p></div>
+      <div class="rank" id="rank"></div>
+      <p class="note">Zeile antippen, um die Region für die ganze Seite zu wählen.</p>
+    </div>
+  </section>
+
+  <!-- Insolvenzbekanntmachungen -->
+  <section class="block" aria-labelledby="h-bek">
+    <div class="panel">
+      <div class="panel-head"><h3 id="h-bek">Einzelne Insolvenzen nachschlagen</h3></div>
+      <p class="lede">Namen einzelner Firmen zeigt diese Seite bewusst nicht: Die Insolvenzbekanntmachungen der Gerichte haben keine offene Schnittstelle, und ihre Weiterverbreitung ist durch die Insolvenzbekanntmachungsverordnung beschränkt. Wer einen konkreten Fall prüfen will, sucht direkt im amtlichen Portal unter <a href="https://neu.insolvenzbekanntmachungen.de/" target="_blank" rel="noopener">insolvenzbekanntmachungen.de</a>.</p>
+    </div>
+  </section>
+
+  <!-- Methodik -->
+  <section class="block" aria-labelledby="h-meth">
+    <div class="block-head">
+      <div class="eyebrow">Methodik</div>
+      <h2 id="h-meth">Woher die Zahlen kommen</h2>
+    </div>
+    <div class="method">
+      <div>
+        <h3>Amtlich</h3>
+        <ul id="src-list"></ul>
+      </div>
+      <div>
+        <h3>Hochgerechnet</h3>
+        <ul>
+          <li>Flussgrößen (Insolvenzen, Gründungen, Aufgaben): Für jeden Monat ohne amtlichen Wert gilt der Vorjahresmonat, skaliert mit der Veränderung der letzten sechs amtlichen Monate gegenüber dem Vorjahr. Der laufende Monat zählt anteilig bis zur aktuellen Sekunde.</li>
+          <li>Schulden: letzter Quartalsstand plus durchschnittlicher Zuwachs der letzten vier Quartale, sekundengenau fortgeschrieben.</li>
+          <li>Arbeitslose sind ein Bestand und werden nicht hochgerechnet; gezeigt wird der letzte Monatswert.</li>
+          <li>„Nur amtliche Werte“ schaltet jede Hochrechnung ab.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Was die Zahlen nicht sagen</h3>
+        <ul>
+          <li>Insolvenzen zählen beantragte Verfahren beim Amtsgericht im Monat der Entscheidung, nicht den Tag der Zahlungsunfähigkeit.</li>
+          <li>Gewerbe-Neugründungen enthalten auch Nebenerwerb und Kleingewerbe; Freie Berufe und Landwirtschaft fehlen. Sie sind kein Maß für „echte“ Start-ups.</li>
+          <li>Schulden der Länder umfassen Land und Gemeinden; die Bundesschuld lässt sich keinem Land zuordnen.</li>
+          <li>Pro-Kopf-Werte beziehen sich auf den Bevölkerungsstand <span id="pop-stag"></span>.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+</div>
+<div id="tip" hidden></div>
+
+<script src="data/data.js"></script>
+<script>
+(function () {
+  "use strict";
+  const D = window.PLEITE_DATA;
+  const START_Y = +D.start.slice(0, 4);
+  const MON = ["Januar","Februar","März","April","Mai","Juni","Juli","August","September","Oktober","November","Dezember"];
+  const MON3 = ["Jan","Feb","Mär","Apr","Mai","Jun","Jul","Aug","Sep","Okt","Nov","Dez"];
+  const nf = (d = 0) => new Intl.NumberFormat("de-DE", { minimumFractionDigits: d, maximumFractionDigits: d });
+  const fmt = (v, d = 0) => v == null || !isFinite(v) ? "–" : nf(d).format(v);
+  const fmtSigned = (v, d = 0) => (v > 0 ? "+" : v < 0 ? "−" : "±") + fmt(Math.abs(v), d);
+  const pct = (a, b) => (a == null || b == null || b === 0) ? null : (a / b - 1) * 100;
+  const idx = (y, m) => (y - START_Y) * 12 + m; // m: 0..11
+  const ymLabel = i => MON[i % 12] + " " + (START_Y + Math.floor(i / 12));
+  const ymShort = i => MON3[i % 12] + " " + (START_Y + Math.floor(i / 12));
+  const latestIdx = k => { const [y, m] = D.latest[k].split("-").map(Number); return idx(y, m - 1); };
+
+  const METRICS = {
+    ins:   { label: "Unternehmensinsolvenzen", agg: "sum", upBad: true, unit: "beantragte Verfahren" },
+    emp:   { label: "Von Insolvenzen betroffene Beschäftigte", agg: "sum", upBad: true, unit: "Beschäftigte" },
+    gru:   { label: "Gewerbe-Neugründungen", agg: "sum", upBad: false, unit: "Neugründungen" },
+    auf:   { label: "Vollständige Gewerbeaufgaben", agg: "sum", upBad: true, unit: "Aufgaben" },
+    saldo: { label: "Gründungssaldo (Neugründungen minus Aufgaben)", agg: "sum", upBad: false, unit: "Saldo", signed: true },
+    alo:   { label: "Arbeitslose", agg: "mean", upBad: true, unit: "Personen (Monatsdurchschnitt)" },
+    alq:   { label: "Arbeitslosenquote", agg: "mean", upBad: true, unit: "% aller zivilen Erwerbspersonen", dec: 1, suffix: " %" },
+  };
+  METRICS.saldo.latest = () => Math.min(latestIdx("gru"), latestIdx("auf"));
+  const lastOf = k => k === "saldo" ? METRICS.saldo.latest() : latestIdx(k);
+
+  const regionByCode = Object.fromEntries(D.regions.map(r => [r.code, r]));
+  function series(r, k) {
+    const s = D.series[r];
+    if (k === "saldo") return s.gru.map((g, i) => g == null || s.auf[i] == null ? null : g - s.auf[i]);
+    return s[k];
+  }
+
+  // ---------- Zustand ----------
+  const store = {
+    get(k, d) { try { return localStorage.getItem("pu." + k) ?? d; } catch (e) { return d; } },
+    set(k, v) { try { localStorage.setItem("pu." + k, v); } catch (e) {} },
+  };
+  const state = {
+    region: regionByCode[store.get("region", "DG")] ? store.get("region", "DG") : "DG",
+    live: store.get("live", "1") === "1",
+    metric: "ins",
+    period: null,
+    span: 10,
+  };
+
+  // ---------- Hochrechnung ----------
+  function yoyFactor(arr, L, n = 6) {
+    let a = 0, b = 0;
+    for (let i = L - n + 1; i <= L; i++) {
+      if (i - 12 < 0 || arr[i] == null || arr[i - 12] == null) return 1;
+      a += arr[i]; b += arr[i - 12];
+    }
+    return b > 0 ? a / b : 1;
+  }
+  function projector(arr, L) {
+    const f = yoyFactor(arr, L);
+    const memo = {};
+    const val = i => {
+      if (i <= L) return arr[i] ?? 0;
+      if (memo[i] != null) return memo[i];
+      return (memo[i] = i - 12 >= 0 ? val(i - 12) * (i - 12 <= L ? f : 1) : 0);
+    };
+    return { val, f };
+  }
+  function monthStart(i) { return new Date(START_Y + Math.floor(i / 12), i % 12, 1).getTime(); }
+
+  // Jahressumme laufendes Jahr: amtlicher Teil + Hochrechnung bis jetzt
+  function ytd(r, k, now) {
+    const d = new Date(now);
+    const Y = d.getFullYear(), C = idx(Y, d.getMonth()), J = idx(Y, 0);
+    const arr = series(r, k), L = lastOf(k);
+    let official = 0;
+    for (let i = J; i <= Math.min(L, J + 11); i++) official += arr[i] ?? 0;
+    const p = projector(arr, L);
+    let proj = 0;
+    for (let i = Math.max(J, L + 1); i < C; i++) proj += p.val(i);
+    let rate = 0;
+    if (C > L) {
+      const ms = monthStart(C), me = monthStart(C + 1);
+      const v = p.val(C);
+      proj += v * (now - ms) / (me - ms);
+      rate = v / ((me - ms) / 1000);
+    }
+    return { official, proj, total: official + proj, rate, L, f: p.f, year: Y };
+  }
+
+  function debtNow(r, now) {
+    const pts = D.debt[r];
+    if (!pts || !pts.length) return null;
+    const [d0, v0] = pts[pts.length - 1];
+    const back = pts[Math.max(0, pts.length - 5)];
+    const t0 = new Date(d0 + "T23:59:59").getTime();
+    const tb = new Date(back[0] + "T23:59:59").getTime();
+    const ratePerMs = t0 > tb ? (v0 - back[1]) * 1e6 / (t0 - tb) : 0;
+    return { stag: d0, base: v0 * 1e6, ratePerMs, value: v0 * 1e6 + ratePerMs * Math.max(0, now - t0), yoy: pct(v0, back[1]) };
+  }
+
+  function every(rate) {
+    if (!rate || rate <= 0) return "";
+    const s = 1 / rate;
+    if (s < 1) return "+" + fmt(rate, 1) + " pro Sekunde";
+    if (s < 90) return "+1 alle " + fmt(s) + " Sekunden";
+    if (s < 5400) return "+1 alle " + fmt(s / 60) + " Minuten";
+    if (s < 86400 * 2) return "+1 alle " + fmt(s / 3600, s < 36000 ? 1 : 0) + " Stunden";
+    return "+1 alle " + fmt(s / 86400, 1) + " Tage";
+  }
+  const deltaClass = (d, upBad) => d == null || Math.abs(d) < 0.05 ? "" : (d > 0) === upBad ? "bad" : "good";
+
+  // ---------- Anzeigetafel ----------
+  const $ = id => document.getElementById(id);
+  function tileHTML(el, label) {
+    el.innerHTML = "";
+    const mk = (cls, tag = "div") => { const n = document.createElement(tag); n.className = cls; el.appendChild(n); return n; };
+    const o = { label: mk("label"), val: mk("val"), rate: mk("rate"), split: mk("split"), delta: mk("delta") };
+    o.label.textContent = label;
+    return o;
+  }
+  let tiles = {};
+  function buildBoard() {
+    const reg = regionByCode[state.region];
+    $("b-where").textContent = reg.name;
+    const y = new Date().getFullYear();
+    tiles.ins = tileHTML($("t-ins"), "Firmenpleiten " + y);
+    tiles.gru = tileHTML($("t-gru"), "Gewerbe-Neugründungen " + y);
+    tiles.auf = tileHTML($("t-auf"), "Gewerbeaufgaben " + y);
+    tiles.alo = tileHTML($("t-alo"), "Arbeitslose");
+    $("debt-label").textContent = state.region === "DG"
+      ? "Staatsschulden in Euro"
+      : "Schulden von Land und Gemeinden in Euro";
+    renderAlo();
+    $("b-live").classList.toggle("off", !state.live);
+    $("b-live-t").textContent = state.live ? "Live hochgerechnet" : "Amtlicher Stand";
+    $("m-live").setAttribute("aria-pressed", String(state.live));
+    $("m-off").setAttribute("aria-pressed", String(!state.live));
+    tick();
+  }
+
+  function renderAlo() {
+    const t = tiles.alo, r = state.region;
+    const L = latestIdx("alo");
+    const a = series(r, "alo"), q = series(r, "alq");
+    t.val.textContent = fmt(a[L]);
+    t.rate.textContent = "Quote " + fmt(q[L], 1) + " % · " + ymLabel(L);
+    const d = pct(a[L], a[L - 12]);
+    t.split.textContent = "Vorjahresmonat: " + fmt(a[L - 12]);
+    t.delta.className = "delta " + deltaClass(d, true);
+    t.delta.textContent = d == null ? "" : fmtSigned(d, 1) + " % zum Vorjahresmonat";
+    // Sparkline: 25 Monate
+    const vals = a.slice(L - 24, L + 1);
+    const w = 220, h = 34, mn = Math.min(...vals), mx = Math.max(...vals);
+    const sx = i => 2 + i * (w - 4) / (vals.length - 1), sy = v => h - 3 - (v - mn) / ((mx - mn) || 1) * (h - 6);
+    const ns = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(ns, "svg");
+    svg.setAttribute("viewBox", `0 0 ${w} ${h}`); svg.setAttribute("width", "100%"); svg.setAttribute("height", h);
+    svg.setAttribute("preserveAspectRatio", "none"); svg.setAttribute("aria-label", "Verlauf der letzten 25 Monate");
+    const p = document.createElementNS(ns, "path");
+    p.setAttribute("d", vals.map((v, i) => (i ? "L" : "M") + sx(i).toFixed(1) + " " + sy(v).toFixed(1)).join(""));
+    p.setAttribute("fill", "none"); p.setAttribute("stroke", "var(--board-ink-2)"); p.setAttribute("stroke-width", "1.5");
+    p.setAttribute("vector-effect", "non-scaling-stroke");
+    const c = document.createElementNS(ns, "circle");
+    c.setAttribute("cx", sx(vals.length - 1)); c.setAttribute("cy", sy(vals[vals.length - 1])); c.setAttribute("r", 3);
+    c.setAttribute("fill", "var(--board-accent)");
+    svg.append(p, c);
+    t.el = svg; t.delta.after(svg);
+  }
+
+  function renderFlowTile(k, now) {
+    const t = tiles[k], m = METRICS[k];
+    const y = ytd(state.region, k, now);
+    const total = state.live ? y.total : y.official;
+    t.val.textContent = fmt(Math.floor(total));
+    t.rate.textContent = state.live ? every(y.rate) : "amtlich bis " + ymLabel(y.L);
+    t.split.textContent = state.live
+      ? "amtlich bis " + MON3[y.L % 12] + ": " + fmt(y.official) + " · hochgerechnet: +" + fmt(Math.floor(y.proj))
+      : "ohne Hochrechnung";
+    // Vergleich: gleicher Zeitraum Vorjahr (amtlich, bis L)
+    const arr = series(state.region, k);
+    const J = idx(y.year, 0);
+    let cur = 0, prev = 0;
+    for (let i = J; i <= y.L; i++) { cur += arr[i] ?? 0; prev += arr[i - 12] ?? 0; }
+    const d = y.L >= J ? pct(cur, prev) : null;
+    t.delta.className = "delta " + deltaClass(d, m.upBad);
+    t.delta.textContent = d == null ? "" : fmtSigned(d, 1) + " % ggü. Jan–" + MON3[y.L % 12] + " " + (y.year - 1);
+  }
+
+  function tick() {
+    const now = Date.now();
+    const db = debtNow(state.region, now);
+    if (db) {
+      const v = state.live ? db.value : db.base;
+      $("debt-val").innerHTML = "";
+      $("debt-val").append(document.createTextNode(fmt(Math.round(v))));
+      const sm = document.createElement("small"); sm.textContent = "€"; $("debt-val").append(sm);
+      const sub = $("debt-sub");
+      sub.innerHTML = "";
+      const perSec = db.ratePerMs * 1000;
+      const add = (txt, bold) => { const s = document.createElement("span"); if (bold) { const b = document.createElement("b"); b.textContent = bold; s.append(b, " "); } s.append(txt); sub.append(s); };
+      if (state.live) add("pro Sekunde (Ø letzte vier Quartale)", (perSec >= 0 ? "+" : "−") + fmt(Math.abs(perSec)) + " €");
+      add(fmt(v / regionByCode[state.region].pop) + " € pro Kopf");
+      add("amtlicher Stand " + new Date(db.stag).toLocaleDateString("de-DE") + ": " + fmt(db.base / 1e9, 1) + " Mrd. €" + (db.yoy != null ? " (" + fmtSigned(db.yoy, 1) + " % zum Vorjahr)" : ""));
+    }
+    ["ins", "gru", "auf"].forEach(k => renderFlowTile(k, now));
+  }
+
+  // ---------- Diagramme (SVG) ----------
+  const NS = "http://www.w3.org/2000/svg";
+  function el(tag, attrs, parent) {
+    const n = document.createElementNS(NS, tag);
+    for (const k in attrs) n.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(n);
+    return n;
+  }
+  function niceTicks(lo, hi, count = 5) {
+    if (lo === hi) { hi = lo + 1; }
+    const span = hi - lo, step0 = span / count, mag = Math.pow(10, Math.floor(Math.log10(step0)));
+    const err = step0 / mag, step = (err >= 7.5 ? 10 : err >= 3.5 ? 5 : err >= 1.5 ? 2 : 1) * mag;
+    const a = Math.floor(lo / step) * step, b = Math.ceil(hi / step) * step;
+    const t = []; for (let v = a; v <= b + step / 2; v += step) t.push(+v.toFixed(10));
+    return t;
+  }
+  function axisFmt(v, m) {
+    if (m && m.dec) return fmt(v, 1);
+    const a = Math.abs(v);
+    if (a >= 1e6) return fmt(v / 1e6, a % 1e6 ? 1 : 0) + " Mio.";
+    if (a >= 1e4) return fmt(v / 1e3) + " Tsd.";
+    return fmt(v);
+  }
+  const tip = $("tip");
+  function showTip(evt, title, rows) {
+    tip.innerHTML = "";
+    const t = document.createElement("div"); t.className = "t"; t.textContent = title; tip.append(t);
+    rows.forEach(r => {
+      const row = document.createElement("div"); row.className = "r";
+      const s = document.createElement("span");
+      if (r.color) { const i = document.createElement("i"); i.style.color = r.color; s.append(i); }
+      s.append(r.label);
+      const b = document.createElement("b"); b.textContent = r.value;
+      row.append(s, b); tip.append(row);
+    });
+    tip.hidden = false;
+    const pad = 14, w = tip.offsetWidth, h = tip.offsetHeight;
+    let x = evt.clientX + pad, y = evt.clientY + pad;
+    if (x + w > innerWidth - 8) x = evt.clientX - w - pad;
+    if (y + h > innerHeight - 8) y = evt.clientY - h - pad;
+    tip.style.left = Math.max(8, x) + "px"; tip.style.top = Math.max(8, y) + "px";
+  }
+  const hideTip = () => { tip.hidden = true; };
+
+  function periodMonths(p) {
+    // liefert Monatsindizes 0..11 innerhalb des Jahres
+    if (p.startsWith("m")) return [+p.slice(1)];
+    if (p.startsWith("q")) { const q = +p.slice(1); return [q * 3, q * 3 + 1, q * 3 + 2]; }
+    if (p.startsWith("ytd")) { const e = +p.slice(3); return Array.from({ length: e + 1 }, (_, i) => i); }
+    return Array.from({ length: 12 }, (_, i) => i);
+  }
+  function periodLabel(p) {
+    if (p.startsWith("m")) return MON[+p.slice(1)];
+    if (p.startsWith("q")) return (+p.slice(1) + 1) + ". Quartal";
+    if (p.startsWith("ytd")) return "Januar bis " + MON[+p.slice(3)];
+    return "Gesamtjahr";
+  }
+  function aggregate(arr, y, months, m) {
+    const vals = months.map(mm => arr[idx(y, mm)]);
+    if (vals.some(v => v == null)) return null;
+    const s = vals.reduce((a, b) => a + b, 0);
+    return m.agg === "mean" ? s / vals.length : s;
+  }
+
+  function yearsInScope() {
+    const lastY = START_Y + Math.floor((D.months - 1) / 12);
+    const first = Math.max(START_Y, lastY - state.span + 1);
+    const ys = []; for (let y = first; y <= lastY; y++) ys.push(y);
+    return ys;
+  }
+
+  function renderCompare() {
+    const k = state.metric, m = METRICS[k], arr = series(state.region, k);
+    const months = periodMonths(state.period);
+    const ys = yearsInScope();
+    const rows = ys.map(y => ({ y, v: aggregate(arr, y, months, m) }));
+    rows.forEach((r, i) => { const p = rows[i - 1]; r.d = p && p.v != null && r.v != null ? (m.signed ? null : pct(r.v, p.v)) : null; });
+    const reg = regionByCode[state.region];
+    $("cmp-title").textContent = m.label + " · " + periodLabel(state.period);
+    $("cmp-sub").textContent = reg.name + " · " + (m.agg === "mean" ? "Durchschnitt des Zeitraums" : "Summe des Zeitraums");
+
+    // KPIs
+    const valid = rows.filter(r => r.v != null);
+    const kp = $("cmp-kpis"); kp.innerHTML = "";
+    const addK = (val, lab, chip) => {
+      const d = document.createElement("div"); d.className = "kpi";
+      const b = document.createElement("b"); b.textContent = val; d.append(b);
+      const s = document.createElement("span"); s.textContent = lab;
+      if (chip) { s.append(" "); s.append(chip); }
+      d.append(s); kp.append(d);
+    };
+    const suf = m.suffix || "";
+    if (valid.length) {
+      const last = valid[valid.length - 1];
+      let chip = null;
+      if (last.d != null) {
+        chip = document.createElement("span");
+        const good = (last.d > 0) !== m.upBad;
+        chip.className = "chip " + (Math.abs(last.d) < 0.05 ? "flat" : good ? "good" : "bad");
+        chip.textContent = fmtSigned(last.d, 1) + " %";
+      }
+      addK((m.signed && last.v > 0 ? "+" : "") + fmt(last.v, m.dec || 0) + suf, periodLabel(state.period) + " " + last.y, chip);
+      const mean = valid.reduce((a, r) => a + r.v, 0) / valid.length;
+      addK(fmt(mean, m.dec || 0) + suf, "Ø " + valid[0].y + "–" + last.y);
+      const hi = valid.reduce((a, r) => r.v > a.v ? r : a), lo = valid.reduce((a, r) => r.v < a.v ? r : a);
+      addK(fmt(hi.v, m.dec || 0) + suf, "Höchstwert (" + hi.y + ")");
+      addK(fmt(lo.v, m.dec || 0) + suf, "Tiefstwert (" + lo.y + ")");
+    }
+    drawYearBars($("ch-years"), rows, m);
+
+    // Tabelle
+    const tw = $("cmp-table"); tw.innerHTML = "";
+    const tbl = document.createElement("table");
+    const thead = tbl.createTHead().insertRow();
+    ["Jahr", periodLabel(state.period), m.signed ? "" : "ggü. Vorjahr"].forEach(h => { const th = document.createElement("th"); th.textContent = h; thead.append(th); });
+    const tb = tbl.createTBody();
+    rows.slice().reverse().forEach(r => {
+      const tr = tb.insertRow();
+      [String(r.y), r.v == null ? "noch nicht veröffentlicht" : fmt(r.v, m.dec || 0) + suf, r.d == null ? "" : fmtSigned(r.d, 1) + " %"].forEach(t => { tr.insertCell().textContent = t; });
+    });
+    tw.append(tbl);
+
+    drawSeason($("ch-season"), arr, ys, m, k);
+    drawTrend($("ch-trend"), arr, m, k);
+  }
+
+  function drawYearBars(host, rows, m) {
+    host.innerHTML = "";
+    const W = Math.max(300, host.clientWidth), H = 280;
+    const ml = 58, mr = 8, mt = 22, mb = 46;
+    const vals = rows.filter(r => r.v != null).map(r => r.v);
+    const lo = Math.min(0, ...vals), hi = Math.max(0, ...vals);
+    const ticks = niceTicks(lo, hi, 4);
+    const y0 = ticks[0], y1 = ticks[ticks.length - 1];
+    const sy = v => mt + (H - mt - mb) * (1 - (v - y0) / (y1 - y0 || 1));
+    const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, "aria-label": "Balkendiagramm Jahresvergleich" }, host);
+    ticks.forEach(t => {
+      el("line", { x1: ml, x2: W - mr, y1: sy(t), y2: sy(t), stroke: t === 0 ? "var(--ink-2)" : "var(--line-soft)", "stroke-width": t === 0 ? 1 : 1 }, svg);
+      const tx = el("text", { x: ml - 8, y: sy(t) + 4, "text-anchor": "end" }, svg); tx.textContent = axisFmt(t, m);
+    });
+    const n = rows.length, band = (W - ml - mr) / n, bw = Math.min(56, band * 0.62);
+    const lastValid = [...rows].reverse().find(r => r.v != null);
+    rows.forEach((r, i) => {
+      const cx = ml + band * i + band / 2;
+      const yl = el("text", { x: cx, y: H - mb + 18, "text-anchor": "middle", class: "lbl-yr" }, svg); yl.textContent = band < 38 ? "’" + String(r.y).slice(2) : r.y;
+      if (r.d != null) {
+        const good = (r.d > 0) !== m.upBad;
+        const dl = el("text", { x: cx, y: H - mb + 34, "text-anchor": "middle", class: Math.abs(r.d) < 0.05 ? "" : good ? "lbl-good" : "lbl-bad" }, svg);
+        dl.textContent = (band < 44 ? "" : fmtSigned(r.d, 0) + " %");
+      }
+      if (r.v == null) {
+        const t = el("text", { x: cx, y: sy(0) - 8, "text-anchor": "middle" }, svg); t.textContent = band > 50 ? "n. v." : "";
+        return;
+      }
+      const isLast = r === lastValid;
+      const top = sy(Math.max(r.v, 0)), bot = sy(Math.min(r.v, 0)), h = Math.max(1, bot - top);
+      const x = cx - bw / 2, rr = Math.min(4, h, bw / 2);
+      const d = r.v >= 0
+        ? `M${x},${bot} V${top + rr} Q${x},${top} ${x + rr},${top} H${x + bw - rr} Q${x + bw},${top} ${x + bw},${top + rr} V${bot} Z`
+        : `M${x},${top} V${bot - rr} Q${x},${bot} ${x + rr},${bot} H${x + bw - rr} Q${x + bw},${bot} ${x + bw},${bot - rr} V${top} Z`;
+      const bar = el("path", { d, fill: isLast ? "var(--mark-now)" : "var(--mark-ref)", tabindex: 0, role: "img", "aria-label": r.y + ": " + fmt(r.v, m.dec || 0) }, svg);
+      if (isLast) {
+        const vl = el("text", { x: cx, y: (r.v >= 0 ? top - 7 : bot + 15), "text-anchor": "middle", class: "lbl-strong" }, svg);
+        vl.textContent = axisFmt(r.v, m) ;
+      }
+      const hit = el("rect", { x: ml + band * i, y: mt, width: band, height: H - mt - mb, fill: "transparent" }, svg);
+      const on = e => { bar.style.opacity = .82; showTip(e, periodLabel(state.period) + " " + r.y, [{ label: METRICS[state.metric].unit, value: fmt(r.v, m.dec || 0) + (m.suffix || "") }].concat(r.d != null ? [{ label: "ggü. Vorjahr", value: fmtSigned(r.d, 1) + " %" }] : [])); };
+      const off = () => { bar.style.opacity = 1; hideTip(); };
+      hit.addEventListener("pointermove", on); hit.addEventListener("pointerleave", off);
+      bar.addEventListener("focus", e => { const b = bar.getBoundingClientRect(); on({ clientX: b.right, clientY: b.top }); });
+      bar.addEventListener("blur", off);
+    });
+  }
+
+  function lineChart(host, opt) {
+    // opt: { xs: [labels], series: [{name, vals, color, width, ctx}], m, xTickEvery, tipTitle(i) }
+    host.innerHTML = "";
+    const W = Math.max(280, host.clientWidth), H = 250, ml = 56, mr = 12, mt = 14, mb = 28;
+    const all = opt.series.flatMap(s => s.vals.filter(v => v != null));
+    if (!all.length) return;
+    let lo = Math.min(...all), hi = Math.max(...all);
+    if (opt.zero && lo > 0) lo = 0;
+    const pad = (hi - lo) * 0.06; if (!opt.zero) lo -= pad; hi += pad;
+    const ticks = niceTicks(lo, hi, 4), y0 = ticks[0], y1 = ticks[ticks.length - 1];
+    const n = opt.xs.length;
+    const sx = i => ml + (W - ml - mr) * (n === 1 ? .5 : i / (n - 1));
+    const sy = v => mt + (H - mt - mb) * (1 - (v - y0) / (y1 - y0 || 1));
+    const svg = el("svg", { viewBox: `0 0 ${W} ${H}` }, host);
+    ticks.forEach(t => {
+      el("line", { x1: ml, x2: W - mr, y1: sy(t), y2: sy(t), stroke: "var(--line-soft)" }, svg);
+      const tx = el("text", { x: ml - 8, y: sy(t) + 4, "text-anchor": "end" }, svg); tx.textContent = axisFmt(t, opt.m);
+    });
+    opt.xs.forEach((lab, i) => {
+      if (i % opt.xTickEvery) return;
+      const tx = el("text", { x: sx(i), y: H - 8, "text-anchor": "middle" }, svg); tx.textContent = lab;
+    });
+    const pathFor = vals => {
+      let d = "", pen = false;
+      vals.forEach((v, i) => { if (v == null) { pen = false; return; } d += (pen ? "L" : "M") + sx(i).toFixed(1) + " " + sy(v).toFixed(1); pen = true; });
+      return d;
+    };
+    opt.series.forEach(s => {
+      const p = el("path", { d: pathFor(s.vals), fill: "none", stroke: s.color, "stroke-width": s.width || 2, "stroke-linejoin": "round", "stroke-linecap": "round" }, svg);
+      if (s.dash) p.setAttribute("stroke-dasharray", s.dash);
+      if (s.end) {
+        let li = s.vals.length - 1; while (li >= 0 && s.vals[li] == null) li--;
+        if (li >= 0) {
+          el("circle", { cx: sx(li), cy: sy(s.vals[li]), r: 4.5, fill: s.color, stroke: "var(--surface)", "stroke-width": 2 }, svg);
+          if (s.endLabel) {
+            const right = sx(li) > W - 70;
+            const t = el("text", { x: sx(li) + (right ? -8 : 8), y: sy(s.vals[li]) - 8, "text-anchor": right ? "end" : "start", class: "lbl-strong" }, svg);
+            t.textContent = s.endLabel;
+          }
+        }
+      }
+    });
+    const cross = el("line", { y1: mt, y2: H - mb, stroke: "var(--ink-2)", "stroke-width": 1, opacity: 0 }, svg);
+    const dots = el("g", {}, svg);
+    const hit = el("rect", { x: ml, y: mt, width: W - ml - mr, height: H - mt - mb, fill: "transparent" }, svg);
+    hit.addEventListener("pointermove", e => {
+      const b = svg.getBoundingClientRect(), x = (e.clientX - b.left) * W / b.width;
+      const i = Math.max(0, Math.min(n - 1, Math.round((x - ml) / ((W - ml - mr) / Math.max(1, n - 1)))));
+      cross.setAttribute("x1", sx(i)); cross.setAttribute("x2", sx(i)); cross.setAttribute("opacity", .5);
+      dots.innerHTML = "";
+      const rows = [];
+      opt.series.forEach(s => {
+        const v = s.vals[i];
+        if (v == null) return;
+        if (!s.ctx || opt.tipAll) rows.push({ label: s.name, value: fmt(v, opt.m.dec || 0) + (opt.m.suffix || ""), color: s.ctx ? "var(--muted)" : s.color, v });
+        if (!s.ctx) el("circle", { cx: sx(i), cy: sy(v), r: 4, fill: s.color, stroke: "var(--surface)", "stroke-width": 2 }, dots);
+      });
+      if (opt.sortName) rows.sort((a, b) => b.label.localeCompare(a.label));
+      showTip(e, opt.tipTitle(i), rows);
+    });
+    hit.addEventListener("pointerleave", () => { cross.setAttribute("opacity", 0); dots.innerHTML = ""; hideTip(); });
+  }
+
+  function drawSeason(host, arr, ys, m, k) {
+    const lastY = ys[ys.length - 1];
+    const ser = ys.map(y => {
+      const vals = MON3.map((_, mm) => arr[idx(y, mm)] ?? null);
+      const isNow = y === lastY, isPrev = y === lastY - 1;
+      return { name: String(y), vals, color: isNow ? "var(--mark-now)" : isPrev ? "var(--mark-ref)" : "var(--mark-ctx)", width: isNow ? 2.6 : isPrev ? 2 : 1.25, ctx: !(isNow || isPrev), end: isNow, endLabel: isNow ? String(y) : "" };
+    });
+    // Kontext zuerst zeichnen, Hervorhebungen zuletzt
+    ser.sort((a, b) => (a.ctx === b.ctx) ? 0 : a.ctx ? -1 : 1);
+    $("season-sub").textContent = "Monatswerte je Jahr, " + regionByCode[state.region].name;
+    const lg = $("season-legend"); lg.innerHTML = "";
+    const addL = (txt, color) => { const s = document.createElement("span"); const i = document.createElement("i"); i.style.color = color; s.append(i, txt); lg.append(s); };
+    addL(String(lastY), "var(--mark-now)"); addL(String(lastY - 1), "var(--mark-ref)");
+    if (ys.length > 2) addL(ys[0] + "–" + (lastY - 2), "var(--mark-ctx)");
+    lineChart(host, { xs: MON3, series: ser, m, xTickEvery: innerWidth < 520 ? 2 : 1, tipAll: true, sortName: true, zero: m.agg === "sum" && !m.signed, tipTitle: i => MON[i] });
+  }
+
+  function drawTrend(host, arr, m, k) {
+    const L = lastOf(k);
+    const vals = arr.slice(0, L + 1);
+    const ma = vals.map((_, i) => {
+      if (i < 11) return null;
+      const w = vals.slice(i - 11, i + 1); if (w.some(v => v == null)) return null;
+      return w.reduce((a, b) => a + b, 0) / 12;
+    });
+    const xs = vals.map((_, i) => i % 12 === 0 ? "’" + String(START_Y + i / 12).slice(2) : "");
+    const lg = $("trend-legend"); lg.innerHTML = "";
+    const addL = (txt, color) => { const s = document.createElement("span"); const i = document.createElement("i"); i.style.color = color; s.append(i, txt); lg.append(s); };
+    addL("Monatswert", "var(--mark-ctx)"); addL("12-Monats-Durchschnitt", "var(--mark-ref)");
+    const every = innerWidth < 520 ? 24 : 12;
+    lineChart(host, {
+      xs, xTickEvery: every, m, zero: m.agg === "sum" && !m.signed,
+      series: [
+        { name: "Monatswert", vals, color: "var(--mark-ctx)", width: 1.25 },
+        { name: "12-Monats-Ø", vals: ma, color: "var(--mark-ref)", width: 2.2, end: true, endLabel: "" },
+      ],
+      tipTitle: i => ymLabel(i),
+    });
+  }
+
+  // ---------- Länder-Ranking ----------
+  function renderRank() {
+    const k = state.metric, m = METRICS[k];
+    const L = lastOf(k);
+    const isRate = k === "alq";
+    const per = !isRate && !(k === "alo");
+    const rows = D.regions.filter(r => r.code !== "DG").map(r => {
+      const a = series(r.code, k);
+      let cur, prev;
+      if (m.agg === "sum") {
+        cur = 0; prev = 0;
+        for (let i = L - 11; i <= L; i++) { cur += a[i] ?? 0; prev += a[i - 12] ?? 0; }
+      } else { cur = a[L]; prev = a[L - 12]; }
+      const metric = k === "alo" ? series(r.code, "alq")[L] : isRate ? cur : cur / r.pop * 1e5;
+      return { r, cur, prev, metric, d: m.signed ? null : pct(cur, prev) };
+    }).sort((a, b) => b.metric - a.metric);
+    const span = m.agg === "sum" ? ymShort(L - 11) + " – " + ymShort(L) : ymLabel(L);
+    $("rank-title").textContent = m.label;
+    const what = k === "alo" || isRate ? "Arbeitslosenquote in %" : "je 100.000 Einwohner, Summe der letzten 12 Monate";
+    $("rank-sub").textContent = what + " · " + span;
+    $("rank-lede").textContent = "Absolute Zahlen bevorzugen große Länder. Hier steht jede Kennzahl im Verhältnis zur Bevölkerung, daneben die Veränderung zum Vorjahreszeitraum.";
+    const max = Math.max(...rows.map(x => Math.abs(x.metric)));
+    const host = $("rank"); host.innerHTML = "";
+    rows.forEach(x => {
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "rank-row" + (x.r.code === state.region ? " sel" : "");
+      b.setAttribute("aria-pressed", String(x.r.code === state.region));
+      const nm = document.createElement("span"); nm.className = "nm"; nm.textContent = x.r.name;
+      const bar = document.createElement("span"); bar.className = "bar"; const i = document.createElement("i"); i.style.width = (Math.max(0, x.metric) / max * 100).toFixed(1) + "%"; bar.append(i);
+      const v = document.createElement("span"); v.className = "v"; v.textContent = fmt(x.metric, isRate || k === "alo" ? 1 : (Math.abs(x.metric) < 100 ? 1 : 0));
+      const d = document.createElement("span");
+      d.className = "d " + (x.d == null || Math.abs(x.d) < 0.05 ? "" : ((x.d > 0) !== m.upBad ? "good" : "bad"));
+      d.textContent = x.d == null ? "" : fmtSigned(x.d, 1) + " %";
+      b.append(nm, bar, v, d);
+      b.title = x.r.name + ": " + fmt(x.cur, m.dec || 0) + " absolut";
+      b.addEventListener("click", () => setRegion(x.r.code));
+      host.append(b);
+    });
+  }
+
+  // ---------- Steuerung ----------
+  function fillSelects() {
+    const reg = $("region");
+    D.regions.forEach(r => { const o = document.createElement("option"); o.value = r.code; o.textContent = r.name; reg.append(o); });
+    reg.value = state.region;
+    reg.addEventListener("change", () => setRegion(reg.value));
+    const met = $("metric");
+    Object.entries(METRICS).forEach(([k, m]) => { const o = document.createElement("option"); o.value = k; o.textContent = m.label; met.append(o); });
+    met.value = state.metric;
+    met.addEventListener("change", () => { state.metric = met.value; fillPeriods(); renderCompare(); renderRank(); });
+    $("span").addEventListener("change", e => { state.span = +e.target.value; renderCompare(); });
+    $("period").addEventListener("change", e => { state.period = e.target.value; renderCompare(); });
+    $("m-live").addEventListener("click", () => setLive(true));
+    $("m-off").addEventListener("click", () => setLive(false));
+  }
+  function fillPeriods() {
+    const L = lastOf(state.metric), lm = L % 12;
+    const sel = $("period"), prev = state.period;
+    sel.innerHTML = "";
+    const add = (v, t, grp) => { const o = document.createElement("option"); o.value = v; o.textContent = t; grp.append(o); };
+    const g1 = document.createElement("optgroup"); g1.label = "Monat";
+    MON.forEach((mn, i) => add("m" + i, mn, g1));
+    const g2 = document.createElement("optgroup"); g2.label = "Quartal";
+    [0, 1, 2, 3].forEach(q => add("q" + q, (q + 1) + ". Quartal", g2));
+    const g3 = document.createElement("optgroup"); g3.label = "Zeitraum";
+    add("ytd" + lm, "Januar bis " + MON[lm] + " (bisheriges Jahr)", g3);
+    add("y", "Gesamtjahr", g3);
+    sel.append(g1, g2, g3);
+    const ok = prev && [...sel.options].some(o => o.value === prev) && !prev.startsWith("ytd");
+    state.period = ok ? prev : "m" + lm;
+    sel.value = state.period;
+  }
+  function setRegion(code) {
+    state.region = code; store.set("region", code);
+    $("region").value = code;
+    buildBoard(); renderCompare(); renderRank();
+  }
+  function setLive(on) {
+    state.live = on; store.set("live", on ? "1" : "0");
+    buildBoard();
+  }
+
+  // Quellen & Stand
+  function renderMeta() {
+    const ul = $("src-list");
+    const latest = {
+      ins: "bis " + ymLabel(latestIdx("ins")), gru: "bis " + ymLabel(latestIdx("gru")), auf: "bis " + ymLabel(latestIdx("auf")),
+      alo: "bis " + ymLabel(latestIdx("alo")), debt: "Stichtag " + new Date(D.debt.DG[D.debt.DG.length - 1][0]).toLocaleDateString("de-DE"), pop: "Stichtag " + new Date(D.popStag).toLocaleDateString("de-DE"),
+    };
+    Object.entries(D.sources).forEach(([k, s]) => { const li = document.createElement("li"); li.textContent = s + " – " + latest[k] + "."; ul.append(li); });
+    const li = document.createElement("li");
+    li.append("Abgerufen am " + new Date(D.generated).toLocaleDateString("de-DE") + " über ");
+    const a = document.createElement("a"); a.href = "https://www-genesis.destatis.de/datenbank/online"; a.target = "_blank"; a.rel = "noopener"; a.textContent = "GENESIS-Online";
+    li.append(a, ".");
+    ul.append(li);
+    $("pop-stag").textContent = "vom " + new Date(D.popStag).toLocaleDateString("de-DE");
+    $("b-stand").textContent = "Amtlich: Insolvenzen " + ymShort(latestIdx("ins")) + " · Gewerbe " + ymShort(latestIdx("gru")) + " · Arbeitsmarkt " + ymShort(latestIdx("alo")) + " · Schulden " + new Date(D.debt.DG[D.debt.DG.length - 1][0]).toLocaleDateString("de-DE");
+  }
+
+  fillSelects(); fillPeriods(); renderMeta(); buildBoard(); renderCompare(); renderRank();
+  setInterval(() => { if (state.live && !document.hidden) tick(); }, 250);
+  let rt; const ro = new ResizeObserver(() => { clearTimeout(rt); rt = setTimeout(renderCompare, 120); });
+  ro.observe($("ch-years"));
+})();
+</script>
+</body>
+</html>
