@@ -112,6 +112,85 @@ def trim(months, all_series):
     return last + 1
 
 
+CITY_YEARS = 13
+# Kreisfreie Städte (in Baden-Württemberg: Stadtkreise) ab 100.000 Einwohnern. Drei
+# Großstädte sind nur als Teil eines Kreises ausgewiesen; sie erscheinen unter dem Kreis.
+CITY_KREISE = {"03241": "Hannover (Region)", "05334": "Aachen (Städteregion)",
+               "10041": "Saarbrücken (Regionalverband)"}
+
+
+def fetch_cities(today):
+    from regionalstatistik import fetch_table, fetch_years, number
+
+    def city_name(code, label):
+        if code in CITY_KREISE:
+            return CITY_KREISE[code]
+        return label.split(",")[0].strip()
+
+    pop_rows = fetch_table("12411-01-01-4", 1)
+    cities, pop_stag = {}, None
+    for r in pop_rows:
+        code, label = r["1_variable_attribute_code"], r["1_variable_attribute_label"]
+        if len(code) != 5 or r["2_variable_attribute_code"]:
+            continue
+        is_city = "kreisfreie Stadt" in label or "Stadtkreis" in label or code in CITY_KREISE
+        v = number(r["value"])
+        if is_city and v and v >= 100000:
+            cities[code] = {"code": "K" + code, "name": city_name(code, label),
+                            "land": code[:2], "pop": v}
+            pop_stag = r["time"]
+
+    first = today.year - CITY_YEARS
+
+    def collect(table, picks, years):
+        """picks: key -> (value_variable_code, 2_variable_attribute_code)"""
+        out = {c: {k: {} for k in picks} for c in cities}
+        for r in fetch_years(table, first, today.year):
+            c = r["1_variable_attribute_code"]
+            if c not in cities:
+                continue
+            for key, (var, attr) in picks.items():
+                if r["value_variable_code"] == var and r["2_variable_attribute_code"] == attr:
+                    out[c][key][int(r["time"][:4])] = number(r["value"])
+        return out
+
+    ins = collect("52411-02-01-4", {"ins": ("ISV006", ""), "emp": ("ISVNW1", ""),
+                                    "ford": ("FOR002", "")}, CITY_YEARS)
+    gew = collect("52311-01-04-4", {"gru": ("GEW011", "GEWM0"), "auf": ("GEW013", "GEWM6")},
+                  CITY_YEARS)
+    alo = collect("13211-02-05-4", {"alo": ("ERWP06", ""), "alq": ("ERWP10", "")}, CITY_YEARS)
+
+    years = sorted({y for src in (ins, gew, alo) for c in src.values() for s in c.values() for y in s})
+    y0 = years[0]
+    series = {}
+    latest = {}
+    for c, meta in cities.items():
+        s = {}
+        for src in (ins, gew, alo):
+            for key, vals in src[c].items():
+                s[key] = [vals.get(y) for y in range(y0, years[-1] + 1)]
+                have = [y for y, v in vals.items() if v is not None]
+                if have:
+                    latest[key] = max(latest.get(key, 0), max(have))
+        series[meta["code"]] = s
+    ordered = sorted(cities.values(), key=lambda m: -m["pop"])
+    return {
+        "fetched": today.isoformat(),
+        "start": y0,
+        "years": years[-1] - y0 + 1,
+        "latest": latest,
+        "popStag": pop_stag,
+        "list": ordered,
+        "series": series,
+        "sources": {
+            "ins": "Regionaldatenbank, beantragte Unternehmensinsolvenzen nach Kreisen (52411-02-01-4)",
+            "gru": "Regionaldatenbank, Gewerbeanzeigen nach Kreisen (52311-01-04-4)",
+            "alo": "Regionaldatenbank, Arbeitslose und Arbeitslosenquote nach Kreisen (13211-02-05-4)",
+            "pop": "Regionaldatenbank, Bevölkerungsstand nach Kreisen (12411-01-01-4)",
+        },
+    }
+
+
 def main():
     today = date.today()
     months = [f"{y}-{m:02d}" for y in range(FIRST_YEAR, today.year + 1) for m in range(1, 13)]
@@ -199,9 +278,27 @@ def main():
     out = ROOT / "data"
     out.mkdir(exist_ok=True)
     old = out / "data.json"
-    if old.exists():
-        prev = json.loads(old.read_text(encoding="utf-8"))
+    prev = json.loads(old.read_text(encoding="utf-8")) if old.exists() else {}
+
+    # Großstädte: Jahreswerte aus der Regionaldatenbank. Sie ändern sich selten,
+    # daher nur wöchentlich (oder mit --cities) neu abrufen; bei Fehlern alten Stand behalten.
+    last = prev.get("cities", {}).get("fetched")
+    due = "--cities" in sys.argv or not last or (today - date.fromisoformat(last)).days >= 7
+    if due:
+        try:
+            print("Großstädte (Regionaldatenbank) …")
+            data["cities"] = fetch_cities(today)
+        except Exception as exc:  # Seite nicht erreichbar oder geändert
+            print(f"  Großstädte nicht aktualisiert: {exc}", file=sys.stderr)
+            if prev.get("cities"):
+                data["cities"] = prev["cities"]
+    elif prev.get("cities"):
+        data["cities"] = prev["cities"]
+
+    if prev:
         prev["generated"] = data["generated"]
+        if "cities" in prev and "cities" in data:
+            prev["cities"]["fetched"] = data["cities"]["fetched"]
         if prev == json.loads(json.dumps(data, ensure_ascii=False)):
             print("Keine neuen amtlichen Werte – Dateien bleiben unverändert.")
             return

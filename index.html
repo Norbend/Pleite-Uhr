@@ -58,6 +58,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html { -webkit-text-size-adjust: 100%; }
 body {
   margin: 0; background: var(--bg); color: var(--ink);
@@ -190,6 +191,11 @@ th { font-weight: 600; color: var(--muted); font-size: .75rem; text-transform: u
 .method h3 { color: var(--ink); margin-bottom: 4px; }
 .method ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
 
+.city-note { background: var(--board-panel); border: 1px solid var(--board-line); border-radius: 8px; padding: 12px 14px; color: var(--board-ink-2); font-size: .88rem; }
+.city-note b { color: var(--board-ink); font-weight: 600; }
+.rank.scroll { max-height: 560px; overflow-y: auto; padding-right: 4px; }
+select optgroup { font-weight: 600; }
+
 #tip {
   position: fixed; z-index: 10; pointer-events: none; background: var(--surface); color: var(--ink);
   border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font-size: .8rem; min-width: 140px;
@@ -228,7 +234,8 @@ th { font-weight: 600; color: var(--muted); font-size: .75rem; text-transform: u
       <span class="live" id="b-live"><i></i><span id="b-live-t">Live hochgerechnet</span></span>
     </div>
 
-    <div class="debt">
+    <div class="city-note" id="city-note" hidden></div>
+    <div class="debt" id="debt">
       <div class="label" id="debt-label">Staatsschulden in Euro</div>
       <div class="big" id="debt-val">–</div>
       <div class="sub" id="debt-sub"></div>
@@ -243,7 +250,7 @@ th { font-weight: 600; color: var(--muted); font-size: .75rem; text-transform: u
 
     <div class="board-foot">
       <span id="b-stand"></span>
-      <div class="seg" role="group" aria-label="Anzeige">
+      <div class="seg" role="group" aria-label="Anzeige" id="mode-seg">
         <button type="button" id="m-live" aria-pressed="true">Hochrechnung</button>
         <button type="button" id="m-off" aria-pressed="false">Nur amtliche Werte</button>
       </div>
@@ -279,29 +286,36 @@ th { font-weight: 600; color: var(--muted); font-size: .75rem; text-transform: u
     </div>
 
     <div class="grid-2">
-      <div class="panel">
+      <div class="panel" id="season-panel">
         <div class="panel-head"><h3>Verlaufskurven im Jahr</h3><p id="season-sub"></p></div>
         <div class="legend" id="season-legend"></div>
         <div class="chart" id="ch-season" role="img"></div>
       </div>
       <div class="panel">
-        <div class="panel-head"><h3>Langfristiger Trend</h3><p>Monatswerte und gleitender 12-Monats-Durchschnitt</p></div>
+        <div class="panel-head"><h3>Langfristiger Trend</h3><p id="trend-sub">Monatswerte und gleitender 12-Monats-Durchschnitt</p></div>
         <div class="legend" id="trend-legend"></div>
         <div class="chart" id="ch-trend" role="img"></div>
       </div>
     </div>
   </section>
 
-  <!-- Bundesländer -->
+  <!-- Regionalvergleich -->
   <section class="block" aria-labelledby="h-laender">
     <div class="block-head">
       <div class="eyebrow">Regionalvergleich</div>
-      <h2 id="h-laender">Bundesländer im Vergleich</h2>
+      <h2 id="h-laender">Länder und Großstädte im Vergleich</h2>
       <p class="lede" id="rank-lede"></p>
+    </div>
+    <div class="filters" role="group" aria-label="Vergleichsebene">
+      <div class="seg">
+        <button type="button" id="rk-laender" aria-pressed="true">Bundesländer</button>
+        <button type="button" id="rk-staedte" aria-pressed="false">Großstädte</button>
+      </div>
     </div>
     <div class="panel">
       <div class="panel-head"><h3 id="rank-title"></h3><p id="rank-sub"></p></div>
       <div class="rank" id="rank"></div>
+      <p class="note" id="rank-empty" hidden></p>
       <p class="note">Zeile antippen, um die Region für die ganze Seite zu wählen.</p>
     </div>
   </section>
@@ -341,6 +355,8 @@ th { font-weight: 600; color: var(--muted); font-size: .75rem; text-transform: u
           <li>Gewerbe-Neugründungen enthalten auch Nebenerwerb und Kleingewerbe; Freie Berufe und Landwirtschaft fehlen. Sie sind kein Maß für „echte“ Start-ups.</li>
           <li>Schulden der Länder umfassen Land und Gemeinden; die Bundesschuld lässt sich keinem Land zuordnen.</li>
           <li>Pro-Kopf-Werte beziehen sich auf den Bevölkerungsstand <span id="pop-stag"></span>.</li>
+          <li>Großstädte: kreisfreie Städte bzw. Stadtkreise ab 100.000 Einwohnern, nur als Jahreswerte. Hannover, Aachen und Saarbrücken gibt es nur zusammen mit ihrem Umland (Region, Städteregion, Regionalverband).</li>
+          <li>Für Städte zählt die Gewerbestatistik „Neuerrichtungen“; sie liegen etwa 0,5 % über den Neugründungen der Länderreihe. Kommunale Schulden gibt es je Stadt amtlich nur bis 2018, deshalb zeigt die Stadtansicht keinen Schuldenzähler.</li>
         </ul>
       </div>
     </div>
@@ -353,6 +369,7 @@ th { font-weight: 600; color: var(--muted); font-size: .75rem; text-transform: u
 (function () {
   "use strict";
   const D = window.PLEITE_DATA;
+  const C = D.cities || null;
   const START_Y = +D.start.slice(0, 4);
   const MON = ["Januar","Februar","März","April","Mai","Juni","Juli","August","September","Oktober","November","Dezember"];
   const MON3 = ["Jan","Feb","Mär","Apr","Mai","Jun","Jul","Aug","Sep","Okt","Nov","Dez"];
@@ -364,38 +381,56 @@ th { font-weight: 600; color: var(--muted); font-size: .75rem; text-transform: u
   const ymLabel = i => MON[i % 12] + " " + (START_Y + Math.floor(i / 12));
   const ymShort = i => MON3[i % 12] + " " + (START_Y + Math.floor(i / 12));
   const latestIdx = k => { const [y, m] = D.latest[k].split("-").map(Number); return idx(y, m - 1); };
+  const dateDE = s => new Date(s).toLocaleDateString("de-DE");
 
   const METRICS = {
     ins:   { label: "Unternehmensinsolvenzen", agg: "sum", upBad: true, unit: "beantragte Verfahren" },
     emp:   { label: "Von Insolvenzen betroffene Beschäftigte", agg: "sum", upBad: true, unit: "Beschäftigte" },
-    gru:   { label: "Gewerbe-Neugründungen", agg: "sum", upBad: false, unit: "Neugründungen" },
-    auf:   { label: "Vollständige Gewerbeaufgaben", agg: "sum", upBad: true, unit: "Aufgaben" },
+    ford:  { label: "Voraussichtliche Forderungen aus Insolvenzen", agg: "sum", upBad: true, unit: "Mio. €", suffix: " Mio. €", plain: true, cityOnly: true, scale: 1e-3 },
+    gru:   { label: "Gewerbe-Neugründungen", cityLabel: "Gewerbe-Neuerrichtungen", agg: "sum", upBad: false, unit: "Neugründungen" },
+    auf:   { label: "Vollständige Gewerbeaufgaben", cityLabel: "Gewerbeaufgaben", agg: "sum", upBad: true, unit: "Aufgaben" },
     saldo: { label: "Gründungssaldo (Neugründungen minus Aufgaben)", agg: "sum", upBad: false, unit: "Saldo", signed: true },
-    alo:   { label: "Arbeitslose", agg: "mean", upBad: true, unit: "Personen (Monatsdurchschnitt)" },
+    alo:   { label: "Arbeitslose", agg: "mean", upBad: true, unit: "Personen (Durchschnitt)" },
     alq:   { label: "Arbeitslosenquote", agg: "mean", upBad: true, unit: "% aller zivilen Erwerbspersonen", dec: 1, suffix: " %" },
   };
-  METRICS.saldo.latest = () => Math.min(latestIdx("gru"), latestIdx("auf"));
-  const lastOf = k => k === "saldo" ? METRICS.saldo.latest() : latestIdx(k);
+  const lastOf = k => k === "saldo" ? Math.min(latestIdx("gru"), latestIdx("auf")) : latestIdx(k);
 
   const regionByCode = Object.fromEntries(D.regions.map(r => [r.code, r]));
+  const cityByCode = C ? Object.fromEntries(C.list.map(c => [c.code, c])) : {};
+  const isCity = r => r.charAt(0) === "K";
+  const info = r => isCity(r) ? cityByCode[r] : regionByCode[r];
+  const mLabel = (k, r) => (isCity(r) && METRICS[k].cityLabel) || METRICS[k].label;
+
+  // Monatsreihe (Bund/Länder)
   function series(r, k) {
     const s = D.series[r];
     if (k === "saldo") return s.gru.map((g, i) => g == null || s.auf[i] == null ? null : g - s.auf[i]);
     return s[k];
   }
+  // Jahresreihe (Städte)
+  function cityYears(r, k) {
+    const s = C.series[r];
+    const raw = k === "saldo" ? s.gru.map((g, i) => g == null || s.auf[i] == null ? null : g - s.auf[i]) : s[k];
+    const sc = METRICS[k].scale || 1;
+    return raw.map(v => v == null ? null : v * sc);
+  }
+  const cityLatest = k => k === "saldo" ? Math.min(C.latest.gru, C.latest.auf) : C.latest[k];
 
   // ---------- Zustand ----------
   const store = {
     get(k, d) { try { return localStorage.getItem("pu." + k) ?? d; } catch (e) { return d; } },
     set(k, v) { try { localStorage.setItem("pu." + k, v); } catch (e) {} },
   };
+  const savedRegion = store.get("region", "DG");
   const state = {
-    region: regionByCode[store.get("region", "DG")] ? store.get("region", "DG") : "DG",
+    region: info(savedRegion) ? savedRegion : "DG",
     live: store.get("live", "1") === "1",
     metric: "ins",
     period: null,
     span: 10,
+    rankMode: null,
   };
+  state.rankMode = isCity(state.region) ? "staedte" : "laender";
 
   // ---------- Hochrechnung ----------
   function yoyFactor(arr, L, n = 6) {
@@ -416,26 +451,25 @@ th { font-weight: 600; color: var(--muted); font-size: .75rem; text-transform: u
     };
     return { val, f };
   }
-  function monthStart(i) { return new Date(START_Y + Math.floor(i / 12), i % 12, 1).getTime(); }
+  const monthStart = i => new Date(START_Y + Math.floor(i / 12), i % 12, 1).getTime();
 
-  // Jahressumme laufendes Jahr: amtlicher Teil + Hochrechnung bis jetzt
   function ytd(r, k, now) {
     const d = new Date(now);
-    const Y = d.getFullYear(), C = idx(Y, d.getMonth()), J = idx(Y, 0);
+    const Y = d.getFullYear(), C0 = idx(Y, d.getMonth()), J = idx(Y, 0);
     const arr = series(r, k), L = lastOf(k);
     let official = 0;
     for (let i = J; i <= Math.min(L, J + 11); i++) official += arr[i] ?? 0;
     const p = projector(arr, L);
     let proj = 0;
-    for (let i = Math.max(J, L + 1); i < C; i++) proj += p.val(i);
+    for (let i = Math.max(J, L + 1); i < C0; i++) proj += p.val(i);
     let rate = 0;
-    if (C > L) {
-      const ms = monthStart(C), me = monthStart(C + 1);
-      const v = p.val(C);
+    if (C0 > L) {
+      const ms = monthStart(C0), me = monthStart(C0 + 1);
+      const v = p.val(C0);
       proj += v * (now - ms) / (me - ms);
       rate = v / ((me - ms) / 1000);
     }
-    return { official, proj, total: official + proj, rate, L, f: p.f, year: Y };
+    return { official, proj, total: official + proj, rate, L, year: Y };
   }
 
   function debtNow(r, now) {
@@ -462,25 +496,47 @@ th { font-weight: 600; color: var(--muted); font-size: .75rem; text-transform: u
 
   // ---------- Anzeigetafel ----------
   const $ = id => document.getElementById(id);
+  const NS = "http://www.w3.org/2000/svg";
   function tileHTML(el, label) {
     el.innerHTML = "";
-    const mk = (cls, tag = "div") => { const n = document.createElement(tag); n.className = cls; el.appendChild(n); return n; };
+    const mk = cls => { const n = document.createElement("div"); n.className = cls; el.appendChild(n); return n; };
     const o = { label: mk("label"), val: mk("val"), rate: mk("rate"), split: mk("split"), delta: mk("delta") };
     o.label.textContent = label;
     return o;
   }
+  function spark(after, vals) {
+    vals = vals.filter(v => v != null);
+    if (vals.length < 2) return;
+    const w = 220, h = 34, mn = Math.min(...vals), mx = Math.max(...vals);
+    const sx = i => 2 + i * (w - 4) / (vals.length - 1), sy = v => h - 3 - (v - mn) / ((mx - mn) || 1) * (h - 6);
+    const svg = document.createElementNS(NS, "svg");
+    svg.setAttribute("viewBox", `0 0 ${w} ${h}`); svg.setAttribute("width", "100%"); svg.setAttribute("height", h);
+    svg.setAttribute("preserveAspectRatio", "none"); svg.setAttribute("aria-hidden", "true");
+    const p = document.createElementNS(NS, "path");
+    p.setAttribute("d", vals.map((v, i) => (i ? "L" : "M") + sx(i).toFixed(1) + " " + sy(v).toFixed(1)).join(""));
+    p.setAttribute("fill", "none"); p.setAttribute("stroke", "var(--board-ink-2)"); p.setAttribute("stroke-width", "1.5");
+    p.setAttribute("vector-effect", "non-scaling-stroke");
+    const c = document.createElementNS(NS, "circle");
+    c.setAttribute("cx", sx(vals.length - 1)); c.setAttribute("cy", sy(vals[vals.length - 1])); c.setAttribute("r", 3);
+    c.setAttribute("fill", "var(--board-accent)");
+    svg.append(p, c);
+    after.after(svg);
+  }
+
   let tiles = {};
   function buildBoard() {
-    const reg = regionByCode[state.region];
-    $("b-where").textContent = reg.name;
+    const r = state.region, reg = info(r), city = isCity(r);
+    $("b-where").textContent = city ? reg.name + " · " + regionByCode[reg.land].name : reg.name;
+    $("debt").hidden = city;
+    $("city-note").hidden = !city;
+    $("mode-seg").hidden = city;
+    if (city) { buildCityBoard(); return; }
     const y = new Date().getFullYear();
     tiles.ins = tileHTML($("t-ins"), "Firmenpleiten " + y);
     tiles.gru = tileHTML($("t-gru"), "Gewerbe-Neugründungen " + y);
     tiles.auf = tileHTML($("t-auf"), "Gewerbeaufgaben " + y);
     tiles.alo = tileHTML($("t-alo"), "Arbeitslose");
-    $("debt-label").textContent = state.region === "DG"
-      ? "Staatsschulden in Euro"
-      : "Schulden von Land und Gemeinden in Euro";
+    $("debt-label").textContent = r === "DG" ? "Staatsschulden in Euro" : "Schulden von Land und Gemeinden in Euro";
     renderAlo();
     $("b-live").classList.toggle("off", !state.live);
     $("b-live-t").textContent = state.live ? "Live hochgerechnet" : "Amtlicher Stand";
@@ -499,23 +555,7 @@ th { font-weight: 600; color: var(--muted); font-size: .75rem; text-transform: u
     t.split.textContent = "Vorjahresmonat: " + fmt(a[L - 12]);
     t.delta.className = "delta " + deltaClass(d, true);
     t.delta.textContent = d == null ? "" : fmtSigned(d, 1) + " % zum Vorjahresmonat";
-    // Sparkline: 25 Monate
-    const vals = a.slice(L - 24, L + 1);
-    const w = 220, h = 34, mn = Math.min(...vals), mx = Math.max(...vals);
-    const sx = i => 2 + i * (w - 4) / (vals.length - 1), sy = v => h - 3 - (v - mn) / ((mx - mn) || 1) * (h - 6);
-    const ns = "http://www.w3.org/2000/svg";
-    const svg = document.createElementNS(ns, "svg");
-    svg.setAttribute("viewBox", `0 0 ${w} ${h}`); svg.setAttribute("width", "100%"); svg.setAttribute("height", h);
-    svg.setAttribute("preserveAspectRatio", "none"); svg.setAttribute("aria-label", "Verlauf der letzten 25 Monate");
-    const p = document.createElementNS(ns, "path");
-    p.setAttribute("d", vals.map((v, i) => (i ? "L" : "M") + sx(i).toFixed(1) + " " + sy(v).toFixed(1)).join(""));
-    p.setAttribute("fill", "none"); p.setAttribute("stroke", "var(--board-ink-2)"); p.setAttribute("stroke-width", "1.5");
-    p.setAttribute("vector-effect", "non-scaling-stroke");
-    const c = document.createElementNS(ns, "circle");
-    c.setAttribute("cx", sx(vals.length - 1)); c.setAttribute("cy", sy(vals[vals.length - 1])); c.setAttribute("r", 3);
-    c.setAttribute("fill", "var(--board-accent)");
-    svg.append(p, c);
-    t.el = svg; t.delta.after(svg);
+    spark(t.delta, a.slice(L - 24, L + 1));
   }
 
   function renderFlowTile(k, now) {
@@ -527,7 +567,6 @@ th { font-weight: 600; color: var(--muted); font-size: .75rem; text-transform: u
     t.split.textContent = state.live
       ? "amtlich bis " + MON3[y.L % 12] + ": " + fmt(y.official) + " · hochgerechnet: +" + fmt(Math.floor(y.proj))
       : "ohne Hochrechnung";
-    // Vergleich: gleicher Zeitraum Vorjahr (amtlich, bis L)
     const arr = series(state.region, k);
     const J = idx(y.year, 0);
     let cur = 0, prev = 0;
@@ -537,7 +576,35 @@ th { font-weight: 600; color: var(--muted); font-size: .75rem; text-transform: u
     t.delta.textContent = d == null ? "" : fmtSigned(d, 1) + " % ggü. Jan–" + MON3[y.L % 12] + " " + (y.year - 1);
   }
 
+  function buildCityBoard() {
+    const r = state.region, c = cityByCode[r];
+    $("b-live").classList.add("off");
+    $("b-live-t").textContent = "Jahreswerte";
+    const note = $("city-note"); note.innerHTML = "";
+    const b = document.createElement("b"); b.textContent = c.name + ": " + fmt(c.pop) + " Einwohner. ";
+    note.append(b, "Für Städte veröffentlicht die amtliche Statistik nur Jahreswerte; eine sekundengenaue Hochrechnung wäre deshalb geraten. Einen aktuellen Schuldenstand je Stadt gibt es amtlich nicht.");
+    const yr = k => C.start + cityLatest(k);
+    const at = (k, y) => cityYears(r, k)[y - C.start];
+    const tile = (id, k, label, extra) => {
+      const Y = yr(k), v = at(k, Y), p = at(k, Y - 1), m = METRICS[k];
+      const t = tileHTML($(id), label + " " + Y);
+      t.val.textContent = fmt(v, m.dec || 0) + (k === "alq" ? " %" : "");
+      t.rate.textContent = "Jahreswert · amtlich";
+      t.split.textContent = extra(Y);
+      const d = pct(v, p);
+      t.delta.className = "delta " + deltaClass(d, m.upBad);
+      t.delta.textContent = d == null ? "" : fmtSigned(d, 1) + " % ggü. " + (Y - 1);
+      return t;
+    };
+    tile("t-ins", "ins", "Firmenpleiten", Y => "Forderungen: " + fmt(at("ford", Y)) + " Mio. € · Beschäftigte: " + fmt(at("emp", Y)));
+    tile("t-gru", "gru", "Gewerbe-Neuerrichtungen", Y => "je 1.000 Einwohner: " + fmt(at("gru", Y) / c.pop * 1000, 1));
+    tile("t-auf", "auf", "Gewerbeaufgaben", Y => "Saldo mit Neuerrichtungen: " + fmtSigned(at("saldo", Y)));
+    const ta = tile("t-alo", "alo", "Arbeitslose Ø", Y => "Quote " + fmt(at("alq", Y), 1) + " % · Vorjahr " + fmt(at("alo", Y - 1)));
+    spark(ta.delta, cityYears(r, "alo"));
+  }
+
   function tick() {
+    if (isCity(state.region)) return;
     const now = Date.now();
     const db = debtNow(state.region, now);
     if (db) {
@@ -551,13 +618,12 @@ th { font-weight: 600; color: var(--muted); font-size: .75rem; text-transform: u
       const add = (txt, bold) => { const s = document.createElement("span"); if (bold) { const b = document.createElement("b"); b.textContent = bold; s.append(b, " "); } s.append(txt); sub.append(s); };
       if (state.live) add("pro Sekunde (Ø letzte vier Quartale)", (perSec >= 0 ? "+" : "−") + fmt(Math.abs(perSec)) + " €");
       add(fmt(v / regionByCode[state.region].pop) + " € pro Kopf");
-      add("amtlicher Stand " + new Date(db.stag).toLocaleDateString("de-DE") + ": " + fmt(db.base / 1e9, 1) + " Mrd. €" + (db.yoy != null ? " (" + fmtSigned(db.yoy, 1) + " % zum Vorjahr)" : ""));
+      add("amtlicher Stand " + dateDE(db.stag) + ": " + fmt(db.base / 1e9, 1) + " Mrd. €" + (db.yoy != null ? " (" + fmtSigned(db.yoy, 1) + " % zum Vorjahr)" : ""));
     }
     ["ins", "gru", "auf"].forEach(k => renderFlowTile(k, now));
   }
 
   // ---------- Diagramme (SVG) ----------
-  const NS = "http://www.w3.org/2000/svg";
   function el(tag, attrs, parent) {
     const n = document.createElementNS(NS, tag);
     for (const k in attrs) n.setAttribute(k, attrs[k]);
@@ -574,6 +640,7 @@ th { font-weight: 600; color: var(--muted); font-size: .75rem; text-transform: u
   }
   function axisFmt(v, m) {
     if (m && m.dec) return fmt(v, 1);
+    if (m && m.plain) return fmt(v);
     const a = Math.abs(v);
     if (a >= 1e6) return fmt(v / 1e6, a % 1e6 ? 1 : 0) + " Mio.";
     if (a >= 1e4) return fmt(v / 1e3) + " Tsd.";
@@ -601,13 +668,13 @@ th { font-weight: 600; color: var(--muted); font-size: .75rem; text-transform: u
   const hideTip = () => { tip.hidden = true; };
 
   function periodMonths(p) {
-    // liefert Monatsindizes 0..11 innerhalb des Jahres
     if (p.startsWith("m")) return [+p.slice(1)];
     if (p.startsWith("q")) { const q = +p.slice(1); return [q * 3, q * 3 + 1, q * 3 + 2]; }
     if (p.startsWith("ytd")) { const e = +p.slice(3); return Array.from({ length: e + 1 }, (_, i) => i); }
     return Array.from({ length: 12 }, (_, i) => i);
   }
   function periodLabel(p) {
+    if (isCity(state.region)) return "Jahreswert";
     if (p.startsWith("m")) return MON[+p.slice(1)];
     if (p.startsWith("q")) return (+p.slice(1) + 1) + ". Quartal";
     if (p.startsWith("ytd")) return "Januar bis " + MON[+p.slice(3)];
@@ -620,25 +687,32 @@ th { font-weight: 600; color: var(--muted); font-size: .75rem; text-transform: u
     return m.agg === "mean" ? s / vals.length : s;
   }
 
-  function yearsInScope() {
-    const lastY = START_Y + Math.floor((D.months - 1) / 12);
-    const first = Math.max(START_Y, lastY - state.span + 1);
-    const ys = []; for (let y = first; y <= lastY; y++) ys.push(y);
-    return ys;
+  function yearRows() {
+    const k = state.metric, m = METRICS[k], r = state.region;
+    let rows;
+    if (isCity(r)) {
+      const vals = cityYears(r, k);
+      const first = Math.max(C.start, C.start + C.years - state.span);
+      rows = vals.map((v, i) => ({ y: C.start + i, v })).filter(x => x.y >= first);
+    } else {
+      const arr = series(r, k), months = periodMonths(state.period);
+      const lastY = START_Y + Math.floor((D.months - 1) / 12);
+      const first = Math.max(START_Y, lastY - state.span + 1);
+      rows = [];
+      for (let y = first; y <= lastY; y++) rows.push({ y, v: aggregate(arr, y, months, m) });
+    }
+    rows.forEach((x, i) => { const p = rows[i - 1]; x.d = p && p.v != null && x.v != null && !m.signed ? pct(x.v, p.v) : null; });
+    return rows;
   }
 
   function renderCompare() {
-    const k = state.metric, m = METRICS[k], arr = series(state.region, k);
-    const months = periodMonths(state.period);
-    const ys = yearsInScope();
-    const rows = ys.map(y => ({ y, v: aggregate(arr, y, months, m) }));
-    rows.forEach((r, i) => { const p = rows[i - 1]; r.d = p && p.v != null && r.v != null ? (m.signed ? null : pct(r.v, p.v)) : null; });
-    const reg = regionByCode[state.region];
-    $("cmp-title").textContent = m.label + " · " + periodLabel(state.period);
-    $("cmp-sub").textContent = reg.name + " · " + (m.agg === "mean" ? "Durchschnitt des Zeitraums" : "Summe des Zeitraums");
+    const k = state.metric, m = METRICS[k], r = state.region, city = isCity(r);
+    const rows = yearRows();
+    const reg = info(r);
+    $("cmp-title").textContent = mLabel(k, r) + " · " + periodLabel(state.period);
+    $("cmp-sub").textContent = reg.name + " · " + (city ? "amtliche Jahreswerte" : m.agg === "mean" ? "Durchschnitt des Zeitraums" : "Summe des Zeitraums");
 
-    // KPIs
-    const valid = rows.filter(r => r.v != null);
+    const valid = rows.filter(x => x.v != null);
     const kp = $("cmp-kpis"); kp.innerHTML = "";
     const addK = (val, lab, chip) => {
       const d = document.createElement("div"); d.className = "kpi";
@@ -647,7 +721,7 @@ th { font-weight: 600; color: var(--muted); font-size: .75rem; text-transform: u
       if (chip) { s.append(" "); s.append(chip); }
       d.append(s); kp.append(d);
     };
-    const suf = m.suffix || "";
+    const suf = m.suffix || "", dec = m.dec || 0;
     if (valid.length) {
       const last = valid[valid.length - 1];
       let chip = null;
@@ -657,83 +731,88 @@ th { font-weight: 600; color: var(--muted); font-size: .75rem; text-transform: u
         chip.className = "chip " + (Math.abs(last.d) < 0.05 ? "flat" : good ? "good" : "bad");
         chip.textContent = fmtSigned(last.d, 1) + " %";
       }
-      addK((m.signed && last.v > 0 ? "+" : "") + fmt(last.v, m.dec || 0) + suf, periodLabel(state.period) + " " + last.y, chip);
-      const mean = valid.reduce((a, r) => a + r.v, 0) / valid.length;
-      addK(fmt(mean, m.dec || 0) + suf, "Ø " + valid[0].y + "–" + last.y);
-      const hi = valid.reduce((a, r) => r.v > a.v ? r : a), lo = valid.reduce((a, r) => r.v < a.v ? r : a);
-      addK(fmt(hi.v, m.dec || 0) + suf, "Höchstwert (" + hi.y + ")");
-      addK(fmt(lo.v, m.dec || 0) + suf, "Tiefstwert (" + lo.y + ")");
+      addK((m.signed && last.v > 0 ? "+" : "") + fmt(last.v, dec) + suf, periodLabel(state.period) + " " + last.y, chip);
+      const mean = valid.reduce((a, x) => a + x.v, 0) / valid.length;
+      addK(fmt(mean, dec) + suf, "Ø " + valid[0].y + "–" + last.y);
+      const hi = valid.reduce((a, x) => x.v > a.v ? x : a), lo = valid.reduce((a, x) => x.v < a.v ? x : a);
+      addK(fmt(hi.v, dec) + suf, "Höchstwert (" + hi.y + ")");
+      addK(fmt(lo.v, dec) + suf, "Tiefstwert (" + lo.y + ")");
     }
     drawYearBars($("ch-years"), rows, m);
 
-    // Tabelle
     const tw = $("cmp-table"); tw.innerHTML = "";
     const tbl = document.createElement("table");
     const thead = tbl.createTHead().insertRow();
     ["Jahr", periodLabel(state.period), m.signed ? "" : "ggü. Vorjahr"].forEach(h => { const th = document.createElement("th"); th.textContent = h; thead.append(th); });
     const tb = tbl.createTBody();
-    rows.slice().reverse().forEach(r => {
+    rows.slice().reverse().forEach(x => {
       const tr = tb.insertRow();
-      [String(r.y), r.v == null ? "noch nicht veröffentlicht" : fmt(r.v, m.dec || 0) + suf, r.d == null ? "" : fmtSigned(r.d, 1) + " %"].forEach(t => { tr.insertCell().textContent = t; });
+      [String(x.y), x.v == null ? "noch nicht veröffentlicht" : fmt(x.v, dec) + suf, x.d == null ? "" : fmtSigned(x.d, 1) + " %"].forEach(t => { tr.insertCell().textContent = t; });
     });
     tw.append(tbl);
 
-    drawSeason($("ch-season"), arr, ys, m, k);
-    drawTrend($("ch-trend"), arr, m, k);
+    $("season-panel").hidden = city;
+    if (city) {
+      drawCityTrend($("ch-trend"), r, k, m);
+    } else {
+      drawSeason($("ch-season"), series(r, k), rows.map(x => x.y), m);
+      drawTrend($("ch-trend"), series(r, k), m, k);
+    }
   }
 
   function drawYearBars(host, rows, m) {
     host.innerHTML = "";
     const W = Math.max(300, host.clientWidth), H = 280;
-    const ml = 58, mr = 8, mt = 22, mb = 46;
-    const vals = rows.filter(r => r.v != null).map(r => r.v);
+    const ml = 64, mr = 8, mt = 22, mb = 46;
+    const vals = rows.filter(x => x.v != null).map(x => x.v);
+    if (!vals.length) return;
     const lo = Math.min(0, ...vals), hi = Math.max(0, ...vals);
     const ticks = niceTicks(lo, hi, 4);
     const y0 = ticks[0], y1 = ticks[ticks.length - 1];
     const sy = v => mt + (H - mt - mb) * (1 - (v - y0) / (y1 - y0 || 1));
     const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, "aria-label": "Balkendiagramm Jahresvergleich" }, host);
     ticks.forEach(t => {
-      el("line", { x1: ml, x2: W - mr, y1: sy(t), y2: sy(t), stroke: t === 0 ? "var(--ink-2)" : "var(--line-soft)", "stroke-width": t === 0 ? 1 : 1 }, svg);
+      el("line", { x1: ml, x2: W - mr, y1: sy(t), y2: sy(t), stroke: t === 0 ? "var(--ink-2)" : "var(--line-soft)", "stroke-width": 1 }, svg);
       const tx = el("text", { x: ml - 8, y: sy(t) + 4, "text-anchor": "end" }, svg); tx.textContent = axisFmt(t, m);
     });
     const n = rows.length, band = (W - ml - mr) / n, bw = Math.min(56, band * 0.62);
-    const lastValid = [...rows].reverse().find(r => r.v != null);
-    rows.forEach((r, i) => {
+    const lastValid = [...rows].reverse().find(x => x.v != null);
+    rows.forEach((x, i) => {
       const cx = ml + band * i + band / 2;
-      const yl = el("text", { x: cx, y: H - mb + 18, "text-anchor": "middle", class: "lbl-yr" }, svg); yl.textContent = band < 38 ? "’" + String(r.y).slice(2) : r.y;
-      if (r.d != null) {
-        const good = (r.d > 0) !== m.upBad;
-        const dl = el("text", { x: cx, y: H - mb + 34, "text-anchor": "middle", class: Math.abs(r.d) < 0.05 ? "" : good ? "lbl-good" : "lbl-bad" }, svg);
-        dl.textContent = (band < 44 ? "" : fmtSigned(r.d, 0) + " %");
+      const yl = el("text", { x: cx, y: H - mb + 18, "text-anchor": "middle", class: "lbl-yr" }, svg);
+      yl.textContent = band < 38 ? "’" + String(x.y).slice(2) : x.y;
+      if (x.d != null) {
+        const good = (x.d > 0) !== m.upBad;
+        const dl = el("text", { x: cx, y: H - mb + 34, "text-anchor": "middle", class: Math.abs(x.d) < 0.05 ? "" : good ? "lbl-good" : "lbl-bad" }, svg);
+        dl.textContent = band < 44 ? "" : fmtSigned(x.d, 0) + " %";
       }
-      if (r.v == null) {
+      if (x.v == null) {
         const t = el("text", { x: cx, y: sy(0) - 8, "text-anchor": "middle" }, svg); t.textContent = band > 50 ? "n. v." : "";
         return;
       }
-      const isLast = r === lastValid;
-      const top = sy(Math.max(r.v, 0)), bot = sy(Math.min(r.v, 0)), h = Math.max(1, bot - top);
-      const x = cx - bw / 2, rr = Math.min(4, h, bw / 2);
-      const d = r.v >= 0
-        ? `M${x},${bot} V${top + rr} Q${x},${top} ${x + rr},${top} H${x + bw - rr} Q${x + bw},${top} ${x + bw},${top + rr} V${bot} Z`
-        : `M${x},${top} V${bot - rr} Q${x},${bot} ${x + rr},${bot} H${x + bw - rr} Q${x + bw},${bot} ${x + bw},${bot - rr} V${top} Z`;
-      const bar = el("path", { d, fill: isLast ? "var(--mark-now)" : "var(--mark-ref)", tabindex: 0, role: "img", "aria-label": r.y + ": " + fmt(r.v, m.dec || 0) }, svg);
+      const isLast = x === lastValid;
+      const top = sy(Math.max(x.v, 0)), bot = sy(Math.min(x.v, 0)), h = Math.max(1, bot - top);
+      const bx = cx - bw / 2, rr = Math.min(4, h, bw / 2);
+      const d = x.v >= 0
+        ? `M${bx},${bot} V${top + rr} Q${bx},${top} ${bx + rr},${top} H${bx + bw - rr} Q${bx + bw},${top} ${bx + bw},${top + rr} V${bot} Z`
+        : `M${bx},${top} V${bot - rr} Q${bx},${bot} ${bx + rr},${bot} H${bx + bw - rr} Q${bx + bw},${bot} ${bx + bw},${bot - rr} V${top} Z`;
+      const bar = el("path", { d, fill: isLast ? "var(--mark-now)" : "var(--mark-ref)", tabindex: 0, role: "img", "aria-label": x.y + ": " + fmt(x.v, m.dec || 0) }, svg);
       if (isLast) {
-        const vl = el("text", { x: cx, y: (r.v >= 0 ? top - 7 : bot + 15), "text-anchor": "middle", class: "lbl-strong" }, svg);
-        vl.textContent = axisFmt(r.v, m) ;
+        const vl = el("text", { x: cx, y: (x.v >= 0 ? top - 7 : bot + 15), "text-anchor": "middle", class: "lbl-strong" }, svg);
+        vl.textContent = axisFmt(x.v, m);
       }
       const hit = el("rect", { x: ml + band * i, y: mt, width: band, height: H - mt - mb, fill: "transparent" }, svg);
-      const on = e => { bar.style.opacity = .82; showTip(e, periodLabel(state.period) + " " + r.y, [{ label: METRICS[state.metric].unit, value: fmt(r.v, m.dec || 0) + (m.suffix || "") }].concat(r.d != null ? [{ label: "ggü. Vorjahr", value: fmtSigned(r.d, 1) + " %" }] : [])); };
+      const on = e => { bar.style.opacity = .82; showTip(e, periodLabel(state.period) + " " + x.y, [{ label: m.unit, value: fmt(x.v, m.dec || 0) + (m.suffix || "") }].concat(x.d != null ? [{ label: "ggü. Vorjahr", value: fmtSigned(x.d, 1) + " %" }] : [])); };
       const off = () => { bar.style.opacity = 1; hideTip(); };
       hit.addEventListener("pointermove", on); hit.addEventListener("pointerleave", off);
-      bar.addEventListener("focus", e => { const b = bar.getBoundingClientRect(); on({ clientX: b.right, clientY: b.top }); });
+      bar.addEventListener("focus", () => { const b = bar.getBoundingClientRect(); on({ clientX: b.right, clientY: b.top }); });
       bar.addEventListener("blur", off);
     });
   }
 
   function lineChart(host, opt) {
-    // opt: { xs: [labels], series: [{name, vals, color, width, ctx}], m, xTickEvery, tipTitle(i) }
     host.innerHTML = "";
-    const W = Math.max(280, host.clientWidth), H = 250, ml = 56, mr = 12, mt = 14, mb = 28;
+    const W = Math.max(280, host.clientWidth), H = 250, ml = 60, mr = 12, mt = 14, mb = 28;
     const all = opt.series.flatMap(s => s.vals.filter(v => v != null));
     if (!all.length) return;
     let lo = Math.min(...all), hi = Math.max(...all);
@@ -749,7 +828,7 @@ th { font-weight: 600; color: var(--muted); font-size: .75rem; text-transform: u
       const tx = el("text", { x: ml - 8, y: sy(t) + 4, "text-anchor": "end" }, svg); tx.textContent = axisFmt(t, opt.m);
     });
     opt.xs.forEach((lab, i) => {
-      if (i % opt.xTickEvery) return;
+      if (i % opt.xTickEvery || !lab) return;
       const tx = el("text", { x: sx(i), y: H - 8, "text-anchor": "middle" }, svg); tx.textContent = lab;
     });
     const pathFor = vals => {
@@ -758,8 +837,8 @@ th { font-weight: 600; color: var(--muted); font-size: .75rem; text-transform: u
       return d;
     };
     opt.series.forEach(s => {
-      const p = el("path", { d: pathFor(s.vals), fill: "none", stroke: s.color, "stroke-width": s.width || 2, "stroke-linejoin": "round", "stroke-linecap": "round" }, svg);
-      if (s.dash) p.setAttribute("stroke-dasharray", s.dash);
+      el("path", { d: pathFor(s.vals), fill: "none", stroke: s.color, "stroke-width": s.width || 2, "stroke-linejoin": "round", "stroke-linecap": "round" }, svg);
+      if (s.dots) s.vals.forEach((v, i) => { if (v != null) el("circle", { cx: sx(i), cy: sy(v), r: 3, fill: s.color }, svg); });
       if (s.end) {
         let li = s.vals.length - 1; while (li >= 0 && s.vals[li] == null) li--;
         if (li >= 0) {
@@ -784,7 +863,7 @@ th { font-weight: 600; color: var(--muted); font-size: .75rem; text-transform: u
       opt.series.forEach(s => {
         const v = s.vals[i];
         if (v == null) return;
-        if (!s.ctx || opt.tipAll) rows.push({ label: s.name, value: fmt(v, opt.m.dec || 0) + (opt.m.suffix || ""), color: s.ctx ? "var(--muted)" : s.color, v });
+        rows.push({ label: s.name, value: fmt(v, opt.m.dec || 0) + (opt.m.suffix || ""), color: s.ctx ? "var(--muted)" : s.color });
         if (!s.ctx) el("circle", { cx: sx(i), cy: sy(v), r: 4, fill: s.color, stroke: "var(--surface)", "stroke-width": 2 }, dots);
       });
       if (opt.sortName) rows.sort((a, b) => b.label.localeCompare(a.label));
@@ -793,21 +872,24 @@ th { font-weight: 600; color: var(--muted); font-size: .75rem; text-transform: u
     hit.addEventListener("pointerleave", () => { cross.setAttribute("opacity", 0); dots.innerHTML = ""; hideTip(); });
   }
 
-  function drawSeason(host, arr, ys, m, k) {
+  function addLegend(host, items) {
+    host.innerHTML = "";
+    items.forEach(([txt, color]) => { const s = document.createElement("span"); const i = document.createElement("i"); i.style.color = color; s.append(i, txt); host.append(s); });
+  }
+
+  function drawSeason(host, arr, ys, m) {
     const lastY = ys[ys.length - 1];
     const ser = ys.map(y => {
       const vals = MON3.map((_, mm) => arr[idx(y, mm)] ?? null);
       const isNow = y === lastY, isPrev = y === lastY - 1;
       return { name: String(y), vals, color: isNow ? "var(--mark-now)" : isPrev ? "var(--mark-ref)" : "var(--mark-ctx)", width: isNow ? 2.6 : isPrev ? 2 : 1.25, ctx: !(isNow || isPrev), end: isNow, endLabel: isNow ? String(y) : "" };
     });
-    // Kontext zuerst zeichnen, Hervorhebungen zuletzt
     ser.sort((a, b) => (a.ctx === b.ctx) ? 0 : a.ctx ? -1 : 1);
-    $("season-sub").textContent = "Monatswerte je Jahr, " + regionByCode[state.region].name;
-    const lg = $("season-legend"); lg.innerHTML = "";
-    const addL = (txt, color) => { const s = document.createElement("span"); const i = document.createElement("i"); i.style.color = color; s.append(i, txt); lg.append(s); };
-    addL(String(lastY), "var(--mark-now)"); addL(String(lastY - 1), "var(--mark-ref)");
-    if (ys.length > 2) addL(ys[0] + "–" + (lastY - 2), "var(--mark-ctx)");
-    lineChart(host, { xs: MON3, series: ser, m, xTickEvery: innerWidth < 520 ? 2 : 1, tipAll: true, sortName: true, zero: m.agg === "sum" && !m.signed, tipTitle: i => MON[i] });
+    $("season-sub").textContent = "Monatswerte je Jahr, " + info(state.region).name;
+    const items = [[String(lastY), "var(--mark-now)"], [String(lastY - 1), "var(--mark-ref)"]];
+    if (ys.length > 2) items.push([ys[0] + "–" + (lastY - 2), "var(--mark-ctx)"]);
+    addLegend($("season-legend"), items);
+    lineChart(host, { xs: MON3, series: ser, m, xTickEvery: innerWidth < 520 ? 2 : 1, sortName: true, zero: m.agg === "sum" && !m.signed, tipTitle: i => MON[i] });
   }
 
   function drawTrend(host, arr, m, k) {
@@ -819,79 +901,131 @@ th { font-weight: 600; color: var(--muted); font-size: .75rem; text-transform: u
       return w.reduce((a, b) => a + b, 0) / 12;
     });
     const xs = vals.map((_, i) => i % 12 === 0 ? "’" + String(START_Y + i / 12).slice(2) : "");
-    const lg = $("trend-legend"); lg.innerHTML = "";
-    const addL = (txt, color) => { const s = document.createElement("span"); const i = document.createElement("i"); i.style.color = color; s.append(i, txt); lg.append(s); };
-    addL("Monatswert", "var(--mark-ctx)"); addL("12-Monats-Durchschnitt", "var(--mark-ref)");
-    const every = innerWidth < 520 ? 24 : 12;
+    $("trend-sub").textContent = "Monatswerte und gleitender 12-Monats-Durchschnitt";
+    addLegend($("trend-legend"), [["Monatswert", "var(--mark-ctx)"], ["12-Monats-Durchschnitt", "var(--mark-ref)"]]);
     lineChart(host, {
-      xs, xTickEvery: every, m, zero: m.agg === "sum" && !m.signed,
+      xs, xTickEvery: innerWidth < 520 ? 24 : 12, m, zero: m.agg === "sum" && !m.signed,
       series: [
         { name: "Monatswert", vals, color: "var(--mark-ctx)", width: 1.25 },
-        { name: "12-Monats-Ø", vals: ma, color: "var(--mark-ref)", width: 2.2, end: true, endLabel: "" },
+        { name: "12-Monats-Ø", vals: ma, color: "var(--mark-ref)", width: 2.2, end: true },
       ],
       tipTitle: i => ymLabel(i),
     });
   }
 
-  // ---------- Länder-Ranking ----------
+  function drawCityTrend(host, r, k, m) {
+    const vals = cityYears(r, k);
+    const xs = vals.map((_, i) => String(C.start + i));
+    $("trend-sub").textContent = "Jahreswerte " + C.start + "–" + (C.start + C.years - 1);
+    addLegend($("trend-legend"), [[info(r).name, "var(--mark-now)"]]);
+    lineChart(host, {
+      xs, xTickEvery: innerWidth < 520 ? 3 : 2, m, zero: m.agg === "sum" && !m.signed,
+      series: [{ name: info(r).name, vals, color: "var(--mark-now)", width: 2.4, dots: true, end: true }],
+      tipTitle: i => String(C.start + i),
+    });
+  }
+
+  // ---------- Regionalvergleich ----------
   function renderRank() {
     const k = state.metric, m = METRICS[k];
-    const L = lastOf(k);
-    const isRate = k === "alq";
-    const per = !isRate && !(k === "alo");
-    const rows = D.regions.filter(r => r.code !== "DG").map(r => {
-      const a = series(r.code, k);
-      let cur, prev;
-      if (m.agg === "sum") {
-        cur = 0; prev = 0;
-        for (let i = L - 11; i <= L; i++) { cur += a[i] ?? 0; prev += a[i - 12] ?? 0; }
-      } else { cur = a[L]; prev = a[L - 12]; }
-      const metric = k === "alo" ? series(r.code, "alq")[L] : isRate ? cur : cur / r.pop * 1e5;
-      return { r, cur, prev, metric, d: m.signed ? null : pct(cur, prev) };
-    }).sort((a, b) => b.metric - a.metric);
-    const span = m.agg === "sum" ? ymShort(L - 11) + " – " + ymShort(L) : ymLabel(L);
-    $("rank-title").textContent = m.label;
-    const what = k === "alo" || isRate ? "Arbeitslosenquote in %" : "je 100.000 Einwohner, Summe der letzten 12 Monate";
+    const cities = state.rankMode === "staedte";
+    $("rk-laender").setAttribute("aria-pressed", String(!cities));
+    $("rk-staedte").setAttribute("aria-pressed", String(cities));
+    const host = $("rank"), empty = $("rank-empty");
+    host.innerHTML = ""; empty.hidden = true;
+    host.classList.toggle("scroll", cities);
+    $("rank-title").textContent = cities ? mLabel(k, "K") : m.label;
+    if (!cities && m.cityOnly) {
+      $("rank-sub").textContent = "";
+      empty.hidden = false;
+      empty.textContent = "Diese Kennzahl gibt es nur für Großstädte. Schalte oben auf „Großstädte“ um.";
+      return;
+    }
+    const rate = k === "alq" || k === "alo";
+    let rows, span;
+    if (cities) {
+      const Y = C.start + cityLatest(k), i = Y - C.start;
+      rows = C.list.map(c => {
+        const a = cityYears(c.code, k);
+        const cur = a[i], prev = a[i - 1];
+        const metric = rate ? cityYears(c.code, "alq")[i] : k === "ford" ? cur * 1e6 / c.pop : cur / c.pop * 1e5;
+        return { code: c.code, name: c.name, cur, metric, d: m.signed ? null : pct(cur, prev) };
+      });
+      span = "Jahr " + Y;
+    } else {
+      const L = lastOf(k);
+      rows = D.regions.filter(r => r.code !== "DG").map(r => {
+        const a = series(r.code, k);
+        let cur, prev;
+        if (m.agg === "sum") { cur = 0; prev = 0; for (let i = L - 11; i <= L; i++) { cur += a[i] ?? 0; prev += a[i - 12] ?? 0; } }
+        else { cur = a[L]; prev = a[L - 12]; }
+        const metric = rate ? series(r.code, "alq")[L] : cur / r.pop * 1e5;
+        return { code: r.code, name: r.name, cur, metric, d: m.signed ? null : pct(cur, prev) };
+      });
+      span = m.agg === "sum" ? ymShort(L - 11) + " – " + ymShort(L) : ymLabel(L);
+    }
+    rows = rows.filter(x => x.metric != null && isFinite(x.metric)).sort((a, b) => b.metric - a.metric);
+    const what = rate ? "Arbeitslosenquote in %" : k === "ford" ? "Forderungen in € je Einwohner" : cities ? "je 100.000 Einwohner" : "je 100.000 Einwohner, Summe der letzten 12 Monate";
     $("rank-sub").textContent = what + " · " + span;
-    $("rank-lede").textContent = "Absolute Zahlen bevorzugen große Länder. Hier steht jede Kennzahl im Verhältnis zur Bevölkerung, daneben die Veränderung zum Vorjahreszeitraum.";
+    $("rank-lede").textContent = cities
+      ? "71 Großstädte ab 100.000 Einwohnern, amtliche Jahreswerte im Verhältnis zur Bevölkerung, daneben die Veränderung zum Vorjahr."
+      : "Absolute Zahlen bevorzugen große Länder. Hier steht jede Kennzahl im Verhältnis zur Bevölkerung, daneben die Veränderung zum Vorjahreszeitraum.";
     const max = Math.max(...rows.map(x => Math.abs(x.metric)));
-    const host = $("rank"); host.innerHTML = "";
-    rows.forEach(x => {
+    rows.forEach((x, n) => {
       const b = document.createElement("button");
-      b.type = "button"; b.className = "rank-row" + (x.r.code === state.region ? " sel" : "");
-      b.setAttribute("aria-pressed", String(x.r.code === state.region));
-      const nm = document.createElement("span"); nm.className = "nm"; nm.textContent = x.r.name;
+      const sel = x.code === state.region;
+      b.type = "button"; b.className = "rank-row" + (sel ? " sel" : "");
+      b.setAttribute("aria-pressed", String(sel));
+      const nm = document.createElement("span"); nm.className = "nm"; nm.textContent = (cities ? (n + 1) + ". " : "") + x.name;
       const bar = document.createElement("span"); bar.className = "bar"; const i = document.createElement("i"); i.style.width = (Math.max(0, x.metric) / max * 100).toFixed(1) + "%"; bar.append(i);
-      const v = document.createElement("span"); v.className = "v"; v.textContent = fmt(x.metric, isRate || k === "alo" ? 1 : (Math.abs(x.metric) < 100 ? 1 : 0));
+      const v = document.createElement("span"); v.className = "v"; v.textContent = fmt(x.metric, rate ? 1 : (Math.abs(x.metric) < 100 ? 1 : 0));
       const d = document.createElement("span");
       d.className = "d " + (x.d == null || Math.abs(x.d) < 0.05 ? "" : ((x.d > 0) !== m.upBad ? "good" : "bad"));
       d.textContent = x.d == null ? "" : fmtSigned(x.d, 1) + " %";
       b.append(nm, bar, v, d);
-      b.title = x.r.name + ": " + fmt(x.cur, m.dec || 0) + " absolut";
-      b.addEventListener("click", () => setRegion(x.r.code));
+      b.title = x.name + ": " + fmt(x.cur, m.dec || 0) + (m.suffix || "") + " absolut";
+      b.addEventListener("click", () => setRegion(x.code));
       host.append(b);
+      if (sel && cities) requestAnimationFrame(() => { host.scrollTop = Math.max(0, b.offsetTop - host.offsetTop - 120); });
     });
   }
 
   // ---------- Steuerung ----------
-  function fillSelects() {
+  function fillRegions() {
     const reg = $("region");
-    D.regions.forEach(r => { const o = document.createElement("option"); o.value = r.code; o.textContent = r.name; reg.append(o); });
+    const g0 = document.createElement("optgroup"); g0.label = "Bund und Länder (monatlich)";
+    D.regions.forEach(r => { const o = document.createElement("option"); o.value = r.code; o.textContent = r.name; g0.append(o); });
+    reg.append(g0);
+    if (C) {
+      const g1 = document.createElement("optgroup"); g1.label = "Großstädte (Jahreswerte)";
+      C.list.slice().sort((a, b) => a.name.localeCompare(b.name, "de")).forEach(c => { const o = document.createElement("option"); o.value = c.code; o.textContent = c.name; g1.append(o); });
+      reg.append(g1);
+    }
     reg.value = state.region;
     reg.addEventListener("change", () => setRegion(reg.value));
-    const met = $("metric");
-    Object.entries(METRICS).forEach(([k, m]) => { const o = document.createElement("option"); o.value = k; o.textContent = m.label; met.append(o); });
+  }
+  function fillMetrics() {
+    const met = $("metric"), city = isCity(state.region);
+    met.innerHTML = "";
+    Object.entries(METRICS).forEach(([k, m]) => {
+      if (m.cityOnly && !city) return;
+      const o = document.createElement("option"); o.value = k; o.textContent = mLabel(k, state.region); met.append(o);
+    });
+    if (!city && METRICS[state.metric].cityOnly) state.metric = "ins";
     met.value = state.metric;
-    met.addEventListener("change", () => { state.metric = met.value; fillPeriods(); renderCompare(); renderRank(); });
-    $("span").addEventListener("change", e => { state.span = +e.target.value; renderCompare(); });
-    $("period").addEventListener("change", e => { state.period = e.target.value; renderCompare(); });
-    $("m-live").addEventListener("click", () => setLive(true));
-    $("m-off").addEventListener("click", () => setLive(false));
   }
   function fillPeriods() {
-    const L = lastOf(state.metric), lm = L % 12;
     const sel = $("period"), prev = state.period;
     sel.innerHTML = "";
+    if (isCity(state.region)) {
+      const o = document.createElement("option"); o.value = "y"; o.textContent = "Gesamtjahr (nur Jahreswerte)"; sel.append(o);
+      sel.disabled = true;
+      $("span").options[2].textContent = "alle ab " + C.start;
+      return;
+    }
+    sel.disabled = false;
+    $("span").options[2].textContent = "alle ab " + START_Y;
+    const L = lastOf(state.metric), lm = L % 12;
     const add = (v, t, grp) => { const o = document.createElement("option"); o.value = v; o.textContent = t; grp.append(o); };
     const g1 = document.createElement("optgroup"); g1.label = "Monat";
     MON.forEach((mn, i) => add("m" + i, mn, g1));
@@ -905,9 +1039,22 @@ th { font-weight: 600; color: var(--muted); font-size: .75rem; text-transform: u
     state.period = ok ? prev : "m" + lm;
     sel.value = state.period;
   }
+  function bind() {
+    $("metric").addEventListener("change", e => { state.metric = e.target.value; fillPeriods(); renderCompare(); renderRank(); });
+    $("span").addEventListener("change", e => { state.span = +e.target.value; renderCompare(); });
+    $("period").addEventListener("change", e => { state.period = e.target.value; renderCompare(); });
+    $("m-live").addEventListener("click", () => setLive(true));
+    $("m-off").addEventListener("click", () => setLive(false));
+    $("rk-laender").addEventListener("click", () => { state.rankMode = "laender"; renderRank(); });
+    $("rk-staedte").addEventListener("click", () => { state.rankMode = "staedte"; renderRank(); });
+    if (!C) $("rk-staedte").hidden = true;
+  }
   function setRegion(code) {
+    const wasCity = isCity(state.region);
     state.region = code; store.set("region", code);
     $("region").value = code;
+    if (isCity(code) !== wasCity) state.rankMode = isCity(code) ? "staedte" : "laender";
+    fillMetrics(); fillPeriods();
     buildBoard(); renderCompare(); renderRank();
   }
   function setLive(on) {
@@ -915,24 +1062,37 @@ th { font-weight: 600; color: var(--muted); font-size: .75rem; text-transform: u
     buildBoard();
   }
 
-  // Quellen & Stand
   function renderMeta() {
     const ul = $("src-list");
     const latest = {
       ins: "bis " + ymLabel(latestIdx("ins")), gru: "bis " + ymLabel(latestIdx("gru")), auf: "bis " + ymLabel(latestIdx("auf")),
-      alo: "bis " + ymLabel(latestIdx("alo")), debt: "Stichtag " + new Date(D.debt.DG[D.debt.DG.length - 1][0]).toLocaleDateString("de-DE"), pop: "Stichtag " + new Date(D.popStag).toLocaleDateString("de-DE"),
+      alo: "bis " + ymLabel(latestIdx("alo")), debt: "Stichtag " + dateDE(D.debt.DG[D.debt.DG.length - 1][0]), pop: "Stichtag " + dateDE(D.popStag),
     };
-    Object.entries(D.sources).forEach(([k, s]) => { const li = document.createElement("li"); li.textContent = s + " – " + latest[k] + "."; ul.append(li); });
-    const li = document.createElement("li");
-    li.append("Abgerufen am " + new Date(D.generated).toLocaleDateString("de-DE") + " über ");
+    const li = t => { const n = document.createElement("li"); n.textContent = t; ul.append(n); };
+    Object.entries(D.sources).forEach(([k, s]) => li(s + " – " + latest[k] + "."));
+    if (C) {
+      const cl = { ins: "bis " + (C.start + C.latest.ins), gru: "bis " + (C.start + C.latest.gru), alo: "bis " + (C.start + C.latest.alo), pop: "Stichtag " + dateDE(C.popStag) };
+      Object.entries(C.sources).forEach(([k, s]) => li(s + " – " + cl[k] + "."));
+    }
+    const n = document.createElement("li");
+    n.append("Abgerufen am " + dateDE(D.generated) + " über ");
     const a = document.createElement("a"); a.href = "https://www-genesis.destatis.de/datenbank/online"; a.target = "_blank"; a.rel = "noopener"; a.textContent = "GENESIS-Online";
-    li.append(a, ".");
-    ul.append(li);
-    $("pop-stag").textContent = "vom " + new Date(D.popStag).toLocaleDateString("de-DE");
-    $("b-stand").textContent = "Amtlich: Insolvenzen " + ymShort(latestIdx("ins")) + " · Gewerbe " + ymShort(latestIdx("gru")) + " · Arbeitsmarkt " + ymShort(latestIdx("alo")) + " · Schulden " + new Date(D.debt.DG[D.debt.DG.length - 1][0]).toLocaleDateString("de-DE");
+    n.append(a);
+    if (C) {
+      n.append(" und die ");
+      const a2 = document.createElement("a"); a2.href = "https://www.regionalstatistik.de/genesis/online"; a2.target = "_blank"; a2.rel = "noopener"; a2.textContent = "Regionaldatenbank";
+      n.append(a2);
+    }
+    n.append(".");
+    ul.append(n);
+    $("pop-stag").textContent = "vom " + dateDE(D.popStag);
+    $("b-stand").textContent = "Amtlich: Insolvenzen " + ymShort(latestIdx("ins")) + " · Gewerbe " + ymShort(latestIdx("gru")) + " · Arbeitsmarkt " + ymShort(latestIdx("alo")) + " · Schulden " + dateDE(D.debt.DG[D.debt.DG.length - 1][0]);
   }
 
-  fillSelects(); fillPeriods(); renderMeta(); buildBoard(); renderCompare(); renderRank();
+  // Jahreswerte der Städte: C.latest enthält Jahre; intern als Index ab C.start führen
+  if (C) Object.keys(C.latest).forEach(k => { C.latest[k] = C.latest[k] - C.start; });
+
+  fillRegions(); fillMetrics(); fillPeriods(); bind(); renderMeta(); buildBoard(); renderCompare(); renderRank();
   setInterval(() => { if (state.live && !document.hidden) tick(); }, 250);
   let rt; const ro = new ResizeObserver(() => { clearTimeout(rt); rt = setTimeout(renderCompare, 120); });
   ro.observe($("ch-years"));
