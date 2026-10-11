@@ -196,6 +196,24 @@ th { font-weight: 600; color: var(--muted); font-size: .75rem; text-transform: u
 .rank.scroll { max-height: 560px; overflow-y: auto; padding-right: 4px; }
 select optgroup { font-weight: 600; }
 
+.grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 16px; }
+.top-card { align-content: start; }
+.top-card .scope { font-size: .8rem; color: var(--muted); }
+.top-card .seg { justify-self: start; }
+.top-card .seg button { font-size: .78rem; min-height: 30px; padding: 5px 9px; }
+.top-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.top-list li { display: grid; grid-template-columns: 26px 1fr auto; column-gap: 10px; row-gap: 5px; align-items: baseline; }
+.top-list .rk { font: 700 1.35rem/1 var(--f-display); color: var(--muted); grid-row: span 2; }
+.top-list li:first-child .rk { color: var(--accent); }
+.top-list .nm { font-weight: 600; font-size: .92rem; min-width: 0; }
+.top-list .val { font: 700 1.1rem/1 var(--f-num); font-variant-numeric: tabular-nums; text-align: right; }
+.top-list .meta { grid-column: 2 / 4; display: flex; align-items: center; gap: 10px; font-size: .78rem; color: var(--muted); }
+.top-list .meta .bar { flex: 1; height: 6px; background: var(--line-soft); border-radius: 0 3px 3px 0; position: relative; min-width: 40px; }
+.top-list .meta .bar i { position: absolute; inset: 0 auto 0 0; background: var(--mark-ref); border-radius: 0 3px 3px 0; }
+.top-list .meta .good { color: var(--good); font-weight: 600; } .top-list .meta .bad { color: var(--bad); font-weight: 600; }
+.top-card .rest { font-size: .78rem; color: var(--muted); border-top: 1px solid var(--line-soft); padding-top: 8px; }
+.gross-row { display: flex; flex-wrap: wrap; gap: 10px 32px; align-items: baseline; }
+
 #tip {
   position: fixed; z-index: 10; pointer-events: none; background: var(--surface); color: var(--ink);
   border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font-size: .8rem; min-width: 140px;
@@ -296,6 +314,21 @@ select optgroup { font-weight: 600; }
         <div class="legend" id="trend-legend"></div>
         <div class="chart" id="ch-trend" role="img"></div>
       </div>
+    </div>
+  </section>
+
+  <!-- Top 3 -->
+  <section class="block" aria-labelledby="h-top">
+    <div class="block-head">
+      <div class="eyebrow">Top 3</div>
+      <h2 id="h-top">Wo es am stärksten trifft</h2>
+      <p class="lede">Die drei Branchen mit den meisten Firmenpleiten, Gewerbeaufgaben und Neugründungen im gewählten Zeitraum, dazu die Großinsolvenzen mit über 100 Beschäftigten. Zeitraum und Region folgen den Filtern oben.</p>
+    </div>
+    <div class="panel" id="gross"></div>
+    <div class="grid-3">
+      <div class="panel top-card" id="top-ins"></div>
+      <div class="panel top-card" id="top-auf"></div>
+      <div class="panel top-card" id="top-gru"></div>
     </div>
   </section>
 
@@ -990,6 +1023,129 @@ select optgroup { font-weight: 600; }
     });
   }
 
+  // ---------- Top 3 (Branchen, Großinsolvenzen) ----------
+  const BR = D.branches || null;
+  const BR_Y0 = BR ? +BR.start.slice(0, 4) : 0;
+  function brLast(table) {
+    let last = -1;
+    Object.values(BR[table].DG).forEach(a => a.forEach((v, i) => { if (v != null && i > last) last = i; }));
+    return last;
+  }
+  // Wählt das jüngste Jahr, in dem der gewählte Zeitraum vollständig vorliegt.
+  function resolvePeriod(L, y0, p) {
+    const lastY = y0 + Math.floor(L / 12), lm = L % 12;
+    let months, Y;
+    if (p.startsWith("ytd")) { months = Array.from({ length: lm + 1 }, (_, i) => i); Y = lastY; }
+    else {
+      months = periodMonths(p);
+      Y = Math.max(...months) <= lm ? lastY : lastY - 1;
+    }
+    const first = months[0], end = months[months.length - 1];
+    let label;
+    if (p.startsWith("m")) label = MON[first] + " " + Y;
+    else if (p.startsWith("q")) label = (first / 3 + 1) + ". Quartal " + Y;
+    else if (p.startsWith("ytd")) label = (end === 0 ? "Januar " : "Januar bis " + MON[end] + " ") + Y;
+    else label = "Gesamtjahr " + Y;
+    const at = y => months.map(m => (y - y0) * 12 + m);
+    return { Y, label, cur: at(Y), prev: at(Y - 1) };
+  }
+  const sumAt = (arr, ix) => { let s = 0, any = false; ix.forEach(i => { const v = arr[i]; if (v != null) { s += v; any = true; } }); return any ? s : null; };
+  function euroTsd(v) {
+    if (v == null) return "–";
+    if (v >= 1e6) return fmt(v / 1e6, 1) + " Mrd. €";
+    return fmt(v / 1e3) + " Mio. €";
+  }
+
+  function topCard(host, opt) {
+    host.innerHTML = "";
+    const head = document.createElement("div"); head.className = "panel-head";
+    const h = document.createElement("h3"); h.textContent = opt.title; head.append(h);
+    host.append(head);
+    const sc = document.createElement("div"); sc.className = "scope"; sc.textContent = opt.scope; host.append(sc);
+    if (opt.controls) host.append(opt.controls);
+    const per = resolvePeriod(opt.L, BR_Y0, opt.period);
+    const rows = Object.entries(opt.data).map(([wz, arr]) => ({ wz, v: sumAt(arr, per.cur), p: sumAt(arr, per.prev) }))
+      .filter(x => x.v != null);
+    const total = rows.reduce((a, x) => a + x.v, 0);
+    rows.sort((a, b) => b.v - a.v);
+    sc.textContent = opt.scope + " · " + per.label;
+    if (!rows.length || !total) { const n = document.createElement("p"); n.className = "note"; n.textContent = "Für diesen Zeitraum liegen noch keine Werte vor."; host.append(n); return; }
+    const ol = document.createElement("ol"); ol.className = "top-list";
+    rows.slice(0, 3).forEach((x, i) => {
+      const li = document.createElement("li");
+      const rk = document.createElement("span"); rk.className = "rk"; rk.textContent = i + 1;
+      const nm = document.createElement("span"); nm.className = "nm"; nm.textContent = BR.labels[x.wz] || x.wz;
+      const val = document.createElement("span"); val.className = "val"; val.textContent = opt.fmtV(x.v);
+      const meta = document.createElement("span"); meta.className = "meta";
+      const bar = document.createElement("span"); bar.className = "bar"; const bi = document.createElement("i"); bi.style.width = (x.v / rows[0].v * 100).toFixed(1) + "%"; bar.append(bi);
+      const share = document.createElement("span"); share.textContent = fmt(x.v / total * 100) + "\u00a0% Anteil";
+      const d = pct(x.v, x.p);
+      const dl = document.createElement("span");
+      if (d != null) { dl.className = deltaClass(d, opt.upBad); dl.textContent = fmtSigned(d, 0) + " % ggü. Vorjahr"; }
+      meta.append(bar, share, dl);
+      li.append(rk, nm, val, meta); ol.append(li);
+    });
+    host.append(ol);
+    const rest = rows.slice(3).reduce((a, x) => a + x.v, 0);
+    const r = document.createElement("div"); r.className = "rest";
+    r.textContent = "Alle Branchen: " + opt.fmtV(total) + " · übrige " + (rows.length - 3) + " Branchen zusammen " + fmt(rest / total * 100) + "\u00a0%";
+    host.append(r);
+  }
+
+  function renderTop() {
+    const sec = $("gross").closest("section");
+    if (!BR) { sec.hidden = true; return; }
+    const r = state.region, city = isCity(r);
+    const land = city ? cityByCode[r].land : r;
+    const p = city ? "y" : state.period;
+    const de = land === "DG";
+    if (!de) state.topSort = "n";
+    const sort = state.topSort || "n";
+
+    // Firmenpleiten: Branchen je Land, Beschäftigte und Forderungen nur bundesweit
+    const seg = document.createElement("div"); seg.className = "seg"; seg.setAttribute("role", "group"); seg.setAttribute("aria-label", "Sortierung");
+    [["n", "Fälle"], ["emp", "Beschäftigte"], ["ford", "Forderungen"]].forEach(([k, t]) => {
+      const b = document.createElement("button"); b.type = "button"; b.textContent = t;
+      b.setAttribute("aria-pressed", String(sort === k));
+      if (k !== "n" && !de) { b.disabled = true; b.title = "Nur bundesweit veröffentlicht"; }
+      b.addEventListener("click", () => { state.topSort = k; renderTop(); });
+      seg.append(b);
+    });
+    const insData = sort === "emp" ? BR.insEmp.DG : sort === "ford" ? BR.insFord.DG : BR.ins[land];
+    const insScope = city ? info(land).name + " (Branchen gibt es nur je Land)" : info(land).name;
+    topCard($("top-ins"), {
+      title: "Firmenpleiten nach Branche", scope: insScope, controls: seg, data: insData, L: brLast("ins"), period: p, upBad: true,
+      fmtV: sort === "ford" ? euroTsd : v => fmt(v) + (sort === "emp" ? " Beschäftigte" : ""),
+    });
+    const gScope = de ? "Deutschland" : "bundesweit (für Länder und Städte nicht veröffentlicht)";
+    topCard($("top-auf"), { title: "Gewerbeaufgaben nach Branche", scope: gScope, data: BR.auf.DG, L: brLast("auf"), period: p, upBad: true, fmtV: v => fmt(v) });
+    topCard($("top-gru"), { title: "Neugründungen nach Branche", scope: gScope, data: BR.gru.DG, L: brLast("gru"), period: p, upBad: false, fmtV: v => fmt(v) });
+
+    // Großinsolvenzen: Unternehmen mit über 100 Beschäftigten (nur bundesweit)
+    const g = BR.gross, host = $("gross");
+    host.innerHTML = "";
+    const per = resolvePeriod(latestIdx("ins"), START_Y, p);
+    const gi = sumAt(g.ins, per.cur), ge = sumAt(g.emp, per.cur), gf = sumAt(g.ford, per.cur);
+    const allEmp = sumAt(D.series.DG.emp, per.cur);
+    const head = document.createElement("div"); head.className = "panel-head";
+    const h = document.createElement("h3"); h.textContent = "Großinsolvenzen: Unternehmen mit über 100 Beschäftigten";
+    const sub = document.createElement("p"); sub.textContent = (de ? "Deutschland" : "bundesweit (nach Ländern nicht veröffentlicht)") + " · " + per.label;
+    head.append(h, sub); host.append(head);
+    const row = document.createElement("div"); row.className = "gross-row";
+    const k = (val, lab, chip) => {
+      const d = document.createElement("div"); d.className = "kpi";
+      const b = document.createElement("b"); b.textContent = val; d.append(b);
+      const s = document.createElement("span"); s.textContent = lab; if (chip) s.append(" ", chip); d.append(s); row.append(d);
+    };
+    const dg = pct(gi, sumAt(g.ins, per.prev));
+    let chip = null;
+    if (dg != null) { chip = document.createElement("span"); chip.className = "chip " + (Math.abs(dg) < 0.05 ? "flat" : dg > 0 ? "bad" : "good"); chip.textContent = fmtSigned(dg, 0) + " %"; }
+    k(fmt(gi), "Verfahren", chip);
+    k(fmt(ge), "betroffene Beschäftigte" + (allEmp ? " (" + fmt(ge / allEmp * 100) + " % aller)" : ""));
+    k(euroTsd(gf), "voraussichtliche Forderungen");
+    host.append(row);
+  }
+
   // ---------- Steuerung ----------
   function fillRegions() {
     const reg = $("region");
@@ -1040,9 +1196,9 @@ select optgroup { font-weight: 600; }
     sel.value = state.period;
   }
   function bind() {
-    $("metric").addEventListener("change", e => { state.metric = e.target.value; fillPeriods(); renderCompare(); renderRank(); });
+    $("metric").addEventListener("change", e => { state.metric = e.target.value; fillPeriods(); renderCompare(); renderRank(); renderTop(); });
     $("span").addEventListener("change", e => { state.span = +e.target.value; renderCompare(); });
-    $("period").addEventListener("change", e => { state.period = e.target.value; renderCompare(); });
+    $("period").addEventListener("change", e => { state.period = e.target.value; renderCompare(); renderTop(); });
     $("m-live").addEventListener("click", () => setLive(true));
     $("m-off").addEventListener("click", () => setLive(false));
     $("rk-laender").addEventListener("click", () => { state.rankMode = "laender"; renderRank(); });
@@ -1055,7 +1211,7 @@ select optgroup { font-weight: 600; }
     $("region").value = code;
     if (isCity(code) !== wasCity) state.rankMode = isCity(code) ? "staedte" : "laender";
     fillMetrics(); fillPeriods();
-    buildBoard(); renderCompare(); renderRank();
+    buildBoard(); renderCompare(); renderRank(); renderTop();
   }
   function setLive(on) {
     state.live = on; store.set("live", on ? "1" : "0");
@@ -1067,6 +1223,7 @@ select optgroup { font-weight: 600; }
     const latest = {
       ins: "bis " + ymLabel(latestIdx("ins")), gru: "bis " + ymLabel(latestIdx("gru")), auf: "bis " + ymLabel(latestIdx("auf")),
       alo: "bis " + ymLabel(latestIdx("alo")), debt: "Stichtag " + dateDE(D.debt.DG[D.debt.DG.length - 1][0]), pop: "Stichtag " + dateDE(D.popStag),
+      branches: "Insolvenzen bis " + ymLabel(latestIdx("ins")) + ", Gewerbe bis " + ymLabel(latestIdx("gru")),
     };
     const li = t => { const n = document.createElement("li"); n.textContent = t; ul.append(n); };
     Object.entries(D.sources).forEach(([k, s]) => li(s + " – " + latest[k] + "."));
@@ -1092,7 +1249,7 @@ select optgroup { font-weight: 600; }
   // Jahreswerte der Städte: C.latest enthält Jahre; intern als Index ab C.start führen
   if (C) Object.keys(C.latest).forEach(k => { C.latest[k] = C.latest[k] - C.start; });
 
-  fillRegions(); fillMetrics(); fillPeriods(); bind(); renderMeta(); buildBoard(); renderCompare(); renderRank();
+  fillRegions(); fillMetrics(); fillPeriods(); bind(); renderMeta(); buildBoard(); renderCompare(); renderRank(); renderTop();
   setInterval(() => { if (state.live && !document.hidden) tick(); }, 250);
   let rt; const ro = new ResizeObserver(() => { clearTimeout(rt); rt = setTimeout(renderCompare, 120); });
   ro.observe($("ch-years"));

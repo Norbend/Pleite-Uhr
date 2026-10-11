@@ -112,6 +112,78 @@ def trim(months, all_series):
     return last + 1
 
 
+BRANCH_YEARS = 4  # laufendes Jahr plus drei Vorjahre reichen für Top-3 und Vorjahresvergleich
+BRANCH_LABELS = {
+    "A": "Land- und Forstwirtschaft", "B": "Bergbau", "C": "Verarbeitendes Gewerbe",
+    "D": "Energieversorgung", "E": "Wasser und Entsorgung", "F": "Baugewerbe",
+    "G": "Handel und Kfz-Reparatur", "H": "Verkehr und Lagerei", "I": "Gastgewerbe",
+    "J": "Information und Kommunikation", "K": "Finanz- und Versicherungsdienstleistungen",
+    "L": "Grundstücks- und Wohnungswesen", "M": "Freiberufliche und technische Dienstleistungen",
+    "N": "Sonstige wirtschaftliche Dienstleistungen", "O": "Öffentliche Verwaltung",
+    "P": "Erziehung und Unterricht", "Q": "Gesundheits- und Sozialwesen",
+    "R": "Kunst, Unterhaltung und Erholung", "S": "Persönliche Dienstleistungen",
+    "O-S": "Persönliche und öffentliche Dienstleistungen",
+}
+
+
+def fetch_branches(today, main_months):
+    """Top-3-Grundlage: Branchen (WZ-Abschnitte) und Großinsolvenzen, monatlich."""
+    y0 = today.year - BRANCH_YEARS + 1
+    months = [f"{y}-{m:02d}" for y in range(y0, today.year + 1) for m in range(1, 13)]
+    pos = {m: i for i, m in enumerate(months)}
+
+    def collect(code, content, wz_dim, region_dim=None):
+        out = {}
+        for k, v in rows(code):
+            if k["content"] != content + "$QMU" or int(k["JAHR"]) < y0:
+                continue
+            wz = k[wz_dim]
+            if not wz.startswith("WZ08-") or wz[5:] not in BRANCH_LABELS:
+                continue
+            reg = k.get(region_dim, "DG") if region_dim else "DG"
+            arr = out.setdefault(reg, {}).setdefault(wz[5:], [None] * len(months))
+            i = pos[month_key(k)]
+            # Summe über Verfahrens- bzw. Gründungsarten; None nur, wenn kein Teilwert vorliegt
+            if v is not None:
+                arr[i] = (arr[i] or 0) + v
+        return out
+
+    print("Branchen …")
+    ins = collect("52411-0018", "ISV006", "WZ08BA")
+    ins.update(collect("52411-0112", "ISV006", "WZ08BA", "DLAND"))
+    data = {
+        "start": months[0],
+        "labels": BRANCH_LABELS,
+        "ins": ins,
+        "insEmp": collect("52411-0022", "ERW020", "WZ08BA"),
+        "insFord": collect("52411-0020", "FOR002", "WZ08BA"),
+        "gru": collect("52311-0011", "GEW009", "WZ08G4"),
+        "auf": collect("52311-0031", "GEW010", "WZ08G4"),
+    }
+    # Monate ohne jeden Wert am Ende abschneiden
+    last = 0
+    for table in ("ins", "gru", "auf"):
+        for arr in data[table]["DG"].values():
+            for i, v in enumerate(arr):
+                if v:
+                    last = max(last, i)
+    n = last + 1
+    for table in ("ins", "insEmp", "insFord", "gru", "auf"):
+        for reg in data[table].values():
+            for wz in reg:
+                reg[wz] = [None if v is None else round(v, 1) for v in reg[wz][:n]]
+    data["months"] = n
+
+    print("Großinsolvenzen …")
+    gross = {"ins": {}, "emp": {}, "ford": {}}
+    keymap = {"ISV006$QMU": "ins", "ERW020$QMU": "emp", "FOR002$QMU": "ford"}
+    for k, v in rows("52411-0013"):
+        if k["UGKL03"] == "ARBNA0100UM" and k["content"] in keymap:
+            gross[keymap[k["content"]]][month_key(k)] = v
+    data["gross"] = {key: [s.get(m) for m in main_months] for key, s in gross.items()}
+    return data
+
+
 CITY_YEARS = 13
 # Kreisfreie Städte (in Baden-Württemberg: Stadtkreise) ab 100.000 Einwohnern. Drei
 # Großstädte sind nur als Teil eines Kreises ausgewiesen; sie erscheinen unter dem Kreis.
@@ -275,6 +347,11 @@ def main():
             "pop": "Destatis, Fortschreibung des Bevölkerungsstandes (12411-0010)",
         },
     }
+    data["branches"] = fetch_branches(today, months)
+    data["sources"]["branches"] = ("Destatis, Insolvenzen nach Wirtschaftszweigen (52411-0018, 52411-0020, "
+                                   "52411-0022, 52411-0112) und Unternehmensgröße (52411-0013); "
+                                   "Gewerbeanzeigen nach Wirtschaftszweigen (52311-0011, 52311-0031)")
+
     out = ROOT / "data"
     out.mkdir(exist_ok=True)
     old = out / "data.json"
